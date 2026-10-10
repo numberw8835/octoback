@@ -1,7 +1,10 @@
 import json
 import os
-from utils.utils import get_dir_hash_optimized, get_file_hash_optimized
-from pprint import pprint
+import logging
+from .utils.utils import get_dir_hash_optimized, get_file_hash_optimized
+DEFAULT_PATH = os.path.expanduser("~/.octoback/octoback-index.json")
+
+logger = logging.getLogger("octoback.engine")
 
 class Engine:
     _instance = None
@@ -17,48 +20,58 @@ class Engine:
             return
         self._lock = True
         self.index = {}
+        self._loaded = False
 
-    def load_index(self, path: str) -> None:
+    def init(self):
+        """Initialize the engine."""
+        base = os.path.expanduser("~/.octoback")
+        if not os.path.exists(base):
+            os.makedirs(base)
+        if not os.path.exists(DEFAULT_PATH):
+            with open(DEFAULT_PATH, 'w') as f:
+                json.dump({}, f)
+
+    def load_index(self, path: str = DEFAULT_PATH) -> None:
         """Load the index from a file."""
+
         try: 
             with open(path, 'r') as f:
                 data = json.load(f)
                 self.index = data
+                self._loaded = True
         except FileNotFoundError:
-            print(f"File not found: {path}")
+            logger.error("File not found: %s", path)
         except json.JSONDecodeError:
-            print(f"Invalid JSON in file: {path}")
+            logger.error("Invalid JSON in file: %s", path)
 
-    def save_index(self, path: str) -> None:
+    def save_index(self, path: str = DEFAULT_PATH) -> None:
         """save the index to file."""
+        if not self._loaded:
+            logger.info("Index not loaded, cannot save!")
+            return
         try:
             with open(path, 'w') as f:
                 json.dump(self.index, f, indent=4)
         except IOError as e:
-            print(f"Error saving index to file: {e}")
+            logger.error("Error saving index to file: %s", e)
 
     def add_path_to_index(self, path: str):
         """adds a path to the index"""
-
         if path in self.index:
-            print("No change done!")
+            logger.info("No change done!")
             return
         if os.path.isdir(path):
             self.index[path] = {
                 "type": "dir",
                 "hash": get_dir_hash_optimized(path),
-                "size": f"{self._calculate_path_size(path)} B"
+                "size": f"{self._calculate_path_size(path)}"
             }
-        elif os.path.isfile(path):
+        if os.path.isfile(path):
             self.index[path] = {
                 "type": "file",
                 "hash": get_file_hash_optimized(path),
-                "size": f"{self._calculate_path_size(path)} B"
+                "size": f"{self._calculate_path_size(path)}"
             }
-        else:
-            print(f"Path not found or not a file or directory: {path}")
-
-
 
     def _calculate_path_size(self, path: str):
         """calculate the size of a path"""
@@ -69,5 +82,4 @@ class Engine:
             for f in files:
                 fp = os.path.join(root, f)
                 total_size += os.path.getsize(fp)
-
         return total_size

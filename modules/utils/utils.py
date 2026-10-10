@@ -30,8 +30,7 @@ def get_dir_hash_optimized(dir_path: str) -> str | None:
     sha256_hash = hashlib.sha256()
     try:
         for root, dirs, files in sorted_dirs_and_files(os.walk(dir_path)):
-            dirs.sort()
-            for name in sorted(files):
+            for name in files:
                 file_path = os.path.join(root, name)
                 rel = os.path.relpath(file_path, dir_path)
                 sha256_hash.update(rel.encode())  # structure matters
