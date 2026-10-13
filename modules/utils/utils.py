@@ -13,7 +13,12 @@ def get_file_hash(file_path: str):
         print(f"File not found: {file_path}")
         return None
 
+# TODO: Add handling for PermissionError, OSError, etc.
+# TODO: Return empty string or raise exception instead of None
+# TODO: Handle files locked by other processes
+
 def get_file_hash_optimized(file_path: str):
+
     "returns the hexdigest of a file but, it does it in chunks of 64MB"
     sha256_hash = hashlib.sha256()
     try:
@@ -25,7 +30,12 @@ def get_file_hash_optimized(file_path: str):
         print(f"File not found: {file_path}")
         return None
 
+# TODO: Add handling for PermissionError, OSError, etc.
+# TODO: Handle files disappearing during directory walk
+# TODO: Handle broken symlinks in directory
+
 def get_dir_hash_optimized(dir_path: str) -> str | None:
+    
     """returns a stable hexdigest of a directory's contents"""
     sha256_hash = hashlib.sha256()
     try:
