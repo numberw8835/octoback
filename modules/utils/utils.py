@@ -11,32 +11,28 @@ def get_file_hash(file_path: str):
             return result
     except FileNotFoundError:
         print(f"File not found: {file_path}")
-        return None
+        return ""
 
-# TODO: Add handling for PermissionError, OSError, etc.
-# TODO: Return empty string or raise exception instead of None
 # TODO: Handle files locked by other processes
 
-def get_file_hash_optimized(file_path: str):
-
-    "returns the hexdigest of a file but, it does it in chunks of 64MB"
+def get_file_hash_optimized(file_path: str) -> str:
+    """returns the hexdigest of a file in chunks of 64MB"""
     sha256_hash = hashlib.sha256()
     try:
         with open(file_path, "rb") as f:
             for chunk in iter(lambda: f.read(64 * 1024 ** 2), b""):
                 sha256_hash.update(chunk)
         return sha256_hash.hexdigest()
-    except FileNotFoundError:
-        print(f"File not found: {file_path}")
-        return None
+    except OSError as e:
+        print(f"Error reading file {file_path}: {e}")
+        return ""
 
-# TODO: Add handling for PermissionError, OSError, etc.
-# TODO: Handle files disappearing during directory walk
-# TODO: Handle broken symlinks in directory
 
-def get_dir_hash_optimized(dir_path: str) -> str | None:
-    
+def get_dir_hash_optimized(dir_path: str) -> str:
     """returns a stable hexdigest of a directory's contents"""
+    if not os.path.isdir(dir_path):
+        print(f"Directory not found: {dir_path}")
+        return ""
     sha256_hash = hashlib.sha256()
     try:
         for root, dirs, files in sorted_dirs_and_files(os.walk(dir_path)):
@@ -44,13 +40,17 @@ def get_dir_hash_optimized(dir_path: str) -> str | None:
                 file_path = os.path.join(root, name)
                 rel = os.path.relpath(file_path, dir_path)
                 sha256_hash.update(rel.encode())  # structure matters
-                with open(file_path, "rb") as f:
-                    for chunk in iter(lambda: f.read(64 * 1024 ** 2), b""):
-                        sha256_hash.update(chunk)
+                try:
+                    with open(file_path, "rb") as f:
+                        for chunk in iter(lambda: f.read(64 * 1024 ** 2), b""):
+                            sha256_hash.update(chunk)
+                except OSError:
+                    # Ignore transient or unreadable files inside the directory
+                    continue
         return sha256_hash.hexdigest()
-    except FileNotFoundError:
-        print(f"Directory not found: {dir_path}")
-        return None
+    except OSError as e:
+        print(f"Error accessing directory {dir_path}: {e}")
+        return ""
 
 def sorted_dirs_and_files(walk):
     """generator that yields (root, sorted(dirs), sorted(files))"""

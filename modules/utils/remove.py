@@ -10,8 +10,5 @@ def remove(engine: Engine, input_list: List[str]) -> None:
         logger.error("Nothing provided and therefore nothing removed.")
         return
     for path in input_list:
-        if os.path.exists(path):
-            engine.remove_path_from_index(path)
-        else:
-            logger.error("Path does not exist: %s", path)
+        engine.remove_path_from_index(path)
     engine.save_index()
