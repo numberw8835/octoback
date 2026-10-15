@@ -13,20 +13,24 @@ def get_file_hash(file_path: str):
         print(f"File not found: {file_path}")
         return ""
 
-def get_file_hash_optimized(file_path: str) -> str:
+def get_file_hash_optimized(file_path: str, tracker: "DualProgressBar | None" = None) -> str:
     """returns the hexdigest of a file in chunks of 64MB"""
     sha256_hash = hashlib.sha256()
     try:
+        if tracker:
+            tracker.start_file(os.path.basename(file_path), os.path.getsize(file_path))
         with open(file_path, "rb") as f:
             for chunk in iter(lambda: f.read(64 * 1024 ** 2), b""):
                 sha256_hash.update(chunk)
+                if tracker:
+                    tracker.update(len(chunk))
         return sha256_hash.hexdigest()
     except OSError as e:
         print(f"Error reading file {file_path}: {e}")
         return ""
 
 class DualProgressBar:
-    """Renders dual progress: [total: ▮▮▮ 2% | file_name: ▮▮▮▮▮▮ 24%]"""
+    """Renders dual progress: [total: ▮▮▮ 2% | file_name : ▮▮▮▮▮▮ 24%]"""
     def __init__(self, total_bytes: int, bar_length: int = 15):
         import sys
         self.sys = sys
@@ -36,11 +40,31 @@ class DualProgressBar:
         self.current_file = ""
         self.current_file_bytes = 0
         self.current_file_total = 1
+        self.files_copied_count = 0
+
+    def scanning(self, item_name: str = ""):
+        """Display scanning message when checking differences."""
+        desc = f"Scanning: {item_name[:20]}" if item_name else "Scanning..."
+        line = f"\r\033[K[{desc}]"
+        self.sys.stdout.write(line)
+        self.sys.stdout.flush()
 
     def start_file(self, filename: str, file_size: int):
-        self.current_file = filename
+        # Truncate long filenames to 25 characters (e.g., "Very_Long_Filename...mp3")
+        max_name_len = 25
+        if len(filename) > max_name_len:
+            name, ext = os.path.splitext(filename)
+            available = max_name_len - len(ext) - 3
+            if available > 0:
+                self.current_file = f"{name[:available]}...{ext}"
+            else:
+                self.current_file = f"{filename[:max_name_len - 3]}..."
+        else:
+            self.current_file = filename
+
         self.current_file_total = max(file_size, 1)
         self.current_file_bytes = 0
+        self.files_copied_count += 1
         self.render()
 
     def update(self, chunk_bytes: int):
@@ -58,13 +82,16 @@ class DualProgressBar:
         total_bar = "▮" * total_filled + " " * (self.bar_length - total_filled)
         file_bar = "▮" * file_filled + " " * (self.bar_length - file_filled)
 
-        # \033[K clears from cursor to end of line, preventing trailing ghost characters
+        # \r moves cursor to column 0; \033[K clears from cursor to end of screen line
         line = f"\r\033[K[total: {total_bar} {total_pct:>3}% | {self.current_file} : {file_bar} {file_pct:>3}%]"
         self.sys.stdout.write(line)
         self.sys.stdout.flush()
 
     def finish(self):
-        self.sys.stdout.write("\n")
+        if self.files_copied_count == 0:
+            self.sys.stdout.write("\r\033[K[OK!] All files are already up to date.\n")
+        else:
+            self.sys.stdout.write("\n")
         self.sys.stdout.flush()
 
 def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None = None) -> bool:
@@ -84,11 +111,11 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
 
             # If sizes match, verify content hash
             if src_stat.st_size == dst_stat.st_size:
+                if tracker:
+                    tracker.scanning(os.path.basename(source))
                 src_hash = get_file_hash_optimized(source)
                 dst_hash = get_file_hash_optimized(dest_file)
                 if src_hash and src_hash == dst_hash:
-                    if tracker:
-                        tracker.update(src_stat.st_size)
                     return True  # Identical, skip copying!
 
         # Need to copy: ensure parent directory exists
@@ -133,12 +160,11 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
 
         # Directory-level fast path: skip if entire directory hash matches
         if os.path.isdir(target_dir):
+            if tracker:
+                tracker.scanning(os.path.basename(source.rstrip(os.sep)))
             src_dir_hash = get_dir_hash_optimized(source)
             dst_dir_hash = get_dir_hash_optimized(target_dir)
             if src_dir_hash and src_dir_hash == dst_dir_hash:
-                if tracker:
-                    dir_size = sum(os.path.getsize(os.path.join(r, f)) for r, _, files in os.walk(source) for f in files)
-                    tracker.update(dir_size)
                 return True  # Whole directory is identical, skip!
 
         # Walk and copy/update files
@@ -172,7 +198,7 @@ def copy_to(source: str, destination: str, tracker: DualProgressBar | None = Non
         print(f"Unsupported source type: {source}")
         return False
 
-def get_dir_hash_optimized(dir_path: str) -> str:
+def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = None) -> str:
     """returns a stable hexdigest of a directory's contents"""
     if not os.path.isdir(dir_path):
         print(f"Directory not found: {dir_path}")
@@ -185,9 +211,13 @@ def get_dir_hash_optimized(dir_path: str) -> str:
                 rel = os.path.relpath(file_path, dir_path)
                 sha256_hash.update(rel.encode())  # structure matters
                 try:
+                    if tracker:
+                        tracker.start_file(name, os.path.getsize(file_path))
                     with open(file_path, "rb") as f:
                         for chunk in iter(lambda: f.read(64 * 1024 ** 2), b""):
                             sha256_hash.update(chunk)
+                            if tracker:
+                                tracker.update(len(chunk))
                 except OSError:
                     # Ignore transient or unreadable files inside the directory
                     continue

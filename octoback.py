@@ -11,6 +11,7 @@ from modules.utils.remove import remove
 from modules.utils.restore import restore
 from modules.utils.show import show
 from modules.utils.unzip import unzip_vault
+from modules.utils.update import update
 from modules.utils.zip import zip_vault
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -30,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_add = subparsers.add_parser("add", help="Add files or directories to tracking index")
     p_add.add_argument("paths", nargs="+", help="Paths to add")
     p_add.add_argument("--granular", action="store_true", help="Add directory contents individually")
+
+    # update
+    p_update = subparsers.add_parser("update", help="Update tracked paths in index (check modified/moved/copied)")
+    p_update.add_argument("paths", nargs="*", default=[], help="Specific paths to update")
+    p_update.add_argument("--all", dest="all_flag", action="store_true", help="Update all indexed items")
 
     # remove
     p_remove = subparsers.add_parser("remove", help="Remove paths from tracking index")
@@ -93,6 +99,8 @@ def main():
 
     if args.command == "add":
         add(engine, args.paths, granular=args.granular)
+    elif args.command == "update":
+        update(engine, args.paths, all_flag=args.all_flag)
     elif args.command == "remove":
         remove(engine, args.paths)
     elif args.command == "check":
