@@ -18,11 +18,13 @@ def restore(engine: Engine, input: List[str], all_flag: bool = False):
         logger.warning("No targets specified for restore.")
         return
 
-    # Step 2: Build pairs of (vault_source, destination_target) and check they exist in vault
+    # Step 2: Build pairs of (vault_source, destination_target) using mirrored paths
     restore_pairs = []
     for original_path in targets:
-        item_name = os.path.basename(original_path.rstrip(os.sep))
-        vault_path = os.path.join(engine.vault_path, item_name)
+        # Items were mirrored under engine.vault_path:
+        # e.g. /home/user/doc.txt was stored at ~/Vault/home/user/doc.txt
+        rel_path = original_path.lstrip(os.sep)
+        vault_path = os.path.join(engine.vault_path, rel_path)
 
         if not os.path.exists(vault_path):
             logger.warning("Item not found in vault: %s", vault_path)

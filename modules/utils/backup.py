@@ -38,13 +38,18 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False):
     # Step 4: Ensure the vault directory exists
     os.makedirs(engine.vault_path, exist_ok=True)
 
-    # Step 5: Copy each target into the vault
+    # Step 5: Copy each target into the vault, mirroring its full path structure
     for path in targets:
         if not os.path.exists(path):
             logger.warning("Target does not exist: %s", path)
             continue
 
-        copy_to(path, engine.vault_path, tracker=tracker)
+        # Strip leading '/' so os.path.join preserves engine.vault_path:
+        # e.g. /home/user/doc.txt -> ~/Vault/home/user/doc.txt
+        rel_path = path.lstrip(os.sep)
+        dest_vault_path = os.path.join(engine.vault_path, rel_path)
+
+        copy_to(source=path, destination=dest_vault_path, tracker=tracker)
 
     # Step 6: Print a final newline after finishing all files
     tracker.finish()

@@ -85,6 +85,12 @@ def main():
         print("Please run `octoback init` first.")
         sys.exit(1)
 
+    # Normalize input paths to absolute paths directly at the CLI level
+    if hasattr(args, "paths") and args.paths:
+        args.paths = [os.path.abspath(p) for p in args.paths]
+    if hasattr(args, "path") and args.path:
+        args.path = os.path.abspath(args.path)
+
     if args.command == "add":
         add(engine, args.paths, granular=args.granular)
     elif args.command == "remove":

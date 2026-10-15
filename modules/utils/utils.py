@@ -38,7 +38,7 @@ class DualProgressBar:
         self.current_file_total = 1
 
     def start_file(self, filename: str, file_size: int):
-        self.current_file = filename[:15]
+        self.current_file = filename
         self.current_file_total = max(file_size, 1)
         self.current_file_bytes = 0
         self.render()
@@ -58,7 +58,8 @@ class DualProgressBar:
         total_bar = "▮" * total_filled + " " * (self.bar_length - total_filled)
         file_bar = "▮" * file_filled + " " * (self.bar_length - file_filled)
 
-        line = f"\r[total: {total_bar} {total_pct:>3}% | {self.current_file}: {file_bar} {file_pct:>3}%]"
+        # \033[K clears from cursor to end of line, preventing trailing ghost characters
+        line = f"\r\033[K[total: {total_bar} {total_pct:>3}% | {self.current_file} : {file_bar} {file_pct:>3}%]"
         self.sys.stdout.write(line)
         self.sys.stdout.flush()
 
@@ -128,7 +129,7 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
     2. Otherwise, copies individual files using optimized copy_file_to.
     """
     try:
-        target_dir = os.path.join(destination, os.path.basename(source.rstrip(os.sep)))
+        target_dir = destination
 
         # Directory-level fast path: skip if entire directory hash matches
         if os.path.isdir(target_dir):
