@@ -3,55 +3,70 @@ import os
 import time
 import logging
 from .utils.utils import get_dir_hash_optimized, get_file_hash_optimized
-DEFAULT_PATH = os.path.expanduser("~/.octoback/octoback-index.json")
-DEFAULT_HISTORY_PATH = os.path.expanduser("~/.octoback/octoback-history.jsonl")
+from .config import CONFIG_FILE, load_config, create_default_config
 
 logger = logging.getLogger("octoback.engine")
 
 class Engine:
-    def __init__(self) -> None:
+    def __init__(self, config_path: str = CONFIG_FILE) -> None:
+        self.config_path = config_path
+        self.config = load_config(config_path)
+        self.index_path = self.config["storage"]["index_path"]
+        self.vault_path = self.config["storage"]["vault_path"]
+        self.history_path = self.config["storage"]["history_path"]
+        self.compression = self.config["settings"]["compression"]
         self.index = {}
         self._loaded = False
+        if os.path.exists(self.index_path):
+            self.load_index()
 
     def init(self):
-        """Initialize the engine."""
-        base = os.path.expanduser("~/.octoback")
-        if not os.path.exists(base):
-            os.makedirs(base)
-        if not os.path.exists(DEFAULT_PATH):
-            with open(DEFAULT_PATH, 'w') as f:
+        """Initialize the engine, configuration, and default storage."""
+        create_default_config(self.config_path)
+        self.config = load_config(self.config_path)
+        self.index_path = self.config["storage"]["index_path"]
+        self.vault_path = self.config["storage"]["vault_path"]
+        self.history_path = self.config["storage"]["history_path"]
+        self.compression = self.config["settings"]["compression"]
+
+        os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
+        os.makedirs(self.vault_path, exist_ok=True)
+        if not os.path.exists(self.index_path):
+            with open(self.index_path, 'w') as f:
                 json.dump({}, f)
         self.index = {}
         self._loaded = True
 
-    def load_index(self, path: str = DEFAULT_PATH) -> None:
+    def load_index(self, path: str | None = None) -> None:
         """Load the index from a file."""
+        target = path or self.index_path
         try: 
-            with open(path, 'r') as f:
+            with open(target, 'r') as f:
                 data = json.load(f)
                 if isinstance(data, dict):
                     self.index = data
                 else:
-                    logger.error("Index file does not contain a JSON object: %s", path)
+                    logger.error("Index file does not contain a JSON object: %s", target)
                     return
                 self._loaded = True
                 logger.info("Data loaded successfully!")
         except FileNotFoundError:
-            logger.error("File not found: %s", path)
+            logger.error("File not found: %s", target)
         except json.JSONDecodeError:
-            logger.error("Invalid JSON in file: %s", path)
+            logger.error("Invalid JSON in file: %s", target)
 
-    def save_index(self, path: str = DEFAULT_PATH) -> None:
+    def save_index(self, path: str | None = None) -> None:
         """save the index to file atomically."""
         if not self._loaded:
             logger.info("Index not loaded, cannot save!")
             return
-        tmp_path = f"{path}.tmp"
+        target = path or self.index_path
+        tmp_path = f"{target}.tmp"
         try:
             with open(tmp_path, 'w') as f:
                 json.dump(self.index, f, indent=4)
-            os.replace(tmp_path, path)
-            logger.info("Data saved to: %s", path)
+            os.replace(tmp_path, target)
+            logger.info("Data saved to: %s", target)
         except OSError as e:
             logger.error("Error saving index to file: %s", e)
             if os.path.exists(tmp_path):
@@ -59,7 +74,7 @@ class Engine:
                     os.remove(tmp_path)
                 except OSError:
                     pass
-
+                    
     def add_path_to_index(self, path: str) -> bool:
         """adds a path to the index"""
         if not os.path.exists(path):
@@ -112,7 +127,8 @@ class Engine:
             "origin": origin
         }
         try:
-            with open(DEFAULT_HISTORY_PATH, "a") as f:
+            os.makedirs(os.path.dirname(self.history_path), exist_ok=True)
+            with open(self.history_path, "a") as f:
                 f.write(json.dumps(entry) + "\n")
         except OSError:
             pass
