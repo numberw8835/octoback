@@ -6,6 +6,7 @@ from modules.engine import Engine
 from modules.commands.add import add
 from modules.commands.backup import backup
 from modules.commands.check import check
+from modules.commands.clear import clear_index, clear_vault
 from modules.commands.prune import prune
 from modules.commands.remove import remove
 from modules.commands.restore import restore
@@ -75,6 +76,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_vclean = vault_subparsers.add_parser("clean", help="Remove ghost files from the Vault using history")
     p_vclean.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
+    # clear
+    p_clear = subparsers.add_parser("clear", help="Clear tracking data or Vault backups")
+    clear_subparsers = p_clear.add_subparsers(dest="clear_target", help="Clear target")
+    p_cindex = clear_subparsers.add_parser("index", help="Clear all tracked items from the index (Vault is NOT touched)")
+    p_cindex.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    p_cvault = clear_subparsers.add_parser("vault", help="Clear all backup files in the Vault (Index and PC files NOT touched)")
+    p_cvault.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
     return parser
 
 
@@ -137,6 +146,13 @@ def main():
             clean_vault(engine, yes_flag=args.yes)
         else:
             parser.parse_args(["vault", "--help"])
+    elif args.command == "clear":
+        if args.clear_target == "index":
+            clear_index(engine, yes_flag=args.yes)
+        elif args.clear_target == "vault":
+            clear_vault(engine, yes_flag=args.yes)
+        else:
+            parser.parse_args(["clear", "--help"])
 
 
 if __name__ == "__main__":
