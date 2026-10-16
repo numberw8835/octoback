@@ -4,3 +4,5 @@ __pycache__/
 *.tmp
 *.octoback.tmp
 .octoback/
+build/
+TODO.md
