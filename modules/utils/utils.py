@@ -123,8 +123,14 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
 
-        # Atomic copy in 64MB chunks
-        tmp_dest = f"{dest_file}.octoback.tmp"
+        # Atomic copy in 64MB chunks (ensure temp filename <= 255 bytes limit)
+        base_name = os.path.basename(dest_file)
+        if len(base_name.encode("utf-8")) + 13 > 255:
+            safe_base = base_name[:240]
+            tmp_dest = os.path.join(parent_dir, f"{safe_base}.tmp")
+        else:
+            tmp_dest = f"{dest_file}.octoback.tmp"
+
         chunk_size = 64 * 1024 * 1024
 
         if tracker:
@@ -141,8 +147,7 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
 
     except OSError as e:
         print(f"Error copying file {source} to {destination}: {e}")
-        tmp_dest = f"{dest_file}.octoback.tmp"
-        if os.path.exists(tmp_dest):
+        if 'tmp_dest' in locals() and os.path.exists(tmp_dest):
             try:
                 os.remove(tmp_dest)
             except OSError:

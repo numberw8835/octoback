@@ -33,12 +33,12 @@ def add(engine: Engine, input_list: List[str], granular: bool = False) -> None:
                 for root, dirs, files in os.walk(path):
                     for file in files:
                         full_path = os.path.join(root, file)
-                        engine.add_path_to_index(full_path)
+                        engine.add_path_to_index(full_path, tracker=tracker)
                     # If this folder is empty, index the folder itself
                     if not dirs and not files:
-                        engine.add_path_to_index(root)
+                        engine.add_path_to_index(root, tracker=tracker)
             else:
-                engine.add_path_to_index(path)
+                engine.add_path_to_index(path, tracker=tracker)
         else:
             logger.error("Path does not exist: %s", path)
 

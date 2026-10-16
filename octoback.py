@@ -30,13 +30,13 @@ def build_parser() -> argparse.ArgumentParser:
     # add
     p_add = subparsers.add_parser("add", help="Add files or directories to tracking index")
     p_add.add_argument("paths", nargs="+", help="Paths to add")
-    p_add.add_argument("--granular", action="store_true", help="Add directory contents individually")
+    p_add.add_argument("-g", "--granular", action="store_true", help="Add directory contents individually")
 
     # update
     p_update = subparsers.add_parser("update", help="Update tracked paths in index (check modified/moved/copied)")
     p_update.add_argument("paths", nargs="*", default=[], help="Specific paths to update")
     p_update.add_argument("--all", dest="all_flag", action="store_true", help="Update all indexed items")
-    p_update.add_argument("--granular", action="store_true", help="Update directory contents individually")
+    p_update.add_argument("-g", "--granular", action="store_true", help="Update directory contents individually")
 
     # remove
     p_remove = subparsers.add_parser("remove", help="Remove paths from tracking index")
