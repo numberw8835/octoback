@@ -66,7 +66,7 @@ octoback restore ~/.zshrc          # bring a file back from the Vault
 | `add <paths> [-g]` | Start tracking paths (`-g` tracks each file in a folder on its own) |
 | `update [<paths>] [--all] [-g]` | Detect modified / moved / copied / deleted / new files |
 | `remove <paths>` | Stop tracking paths (the Vault is not touched) |
-| `check <paths>` | Verify paths still match their tracked hash |
+| `check <paths>` | Verify paths still match their tracked hash (always reads the full contents) |
 | `backup [<paths>] [--all]` | Copy items into the Vault |
 | `restore [<paths>] [--all]` | Copy items back from the Vault |
 | `prune` | Drop paths that no longer exist from the index |
@@ -85,7 +85,9 @@ The **Vault** mirrors the full path of everything you back up:
 /home/you/Documents/report.pdf  ->  ~/Vault/home/you/Documents/report.pdf
 ```
 
-The **index** stores a hash, type and size for each tracked path. The **history** records every lifecycle event:
+The **index** stores a BLAKE3 hash, type and size for each tracked path, plus a quick signature built from sizes and modification times. When the signature hasn't changed, `update` and `backup` skip the path without reading it, which makes repeat runs on large folders nearly instant.
+
+The **history** records every lifecycle event:
 
 ```
 [2026-10-16 21:07:21] [MOVED    ] ~/docs/a.txt -> ~/docs/a2.txt
