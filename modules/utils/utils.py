@@ -157,6 +157,7 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
     """
     try:
         target_dir = destination
+        os.makedirs(target_dir, exist_ok=True)
 
         # Directory-level fast path: skip if entire directory hash matches
         if os.path.isdir(target_dir):
@@ -175,6 +176,9 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
 
             for file in files:
                 src_file = os.path.join(root, file)
+                # Skip symlinks or non-regular files to prevent infinite loops/issues
+                if os.path.islink(src_file) or not os.path.isfile(src_file):
+                    continue
                 dst_file = os.path.join(current_dest, file)
                 if not copy_file_to(src_file, dst_file, tracker=tracker):
                     return False
@@ -208,6 +212,9 @@ def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = No
         for root, dirs, files in sorted_dirs_and_files(os.walk(dir_path)):
             for name in files:
                 file_path = os.path.join(root, name)
+                # Skip symlinks to prevent infinite loops
+                if os.path.islink(file_path) or not os.path.isfile(file_path):
+                    continue
                 rel = os.path.relpath(file_path, dir_path)
                 sha256_hash.update(rel.encode())  # structure matters
                 try:

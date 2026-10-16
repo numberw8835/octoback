@@ -7,7 +7,7 @@ from .utils import DualProgressBar
 logger = logging.getLogger("octoback.update")
 
 
-def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool = False) -> None:
+def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool = False, granular: bool = False) -> None:
     """Updates paths in index (checks for modified, moved, or copied files)."""
     if all_flag:
         targets = list(engine.index.keys())
@@ -35,7 +35,10 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
 
     for path in targets:
         if os.path.exists(path):
-            if os.path.isdir(path):
+            # If path was tracked as a whole directory, update it as a directory unless granular is requested
+            if engine.index.get(path, {}).get("type") == "dir" and not granular:
+                engine.update_path_in_index(path)
+            elif os.path.isdir(path) and granular:
                 for root, dirs, files in os.walk(path):
                     for file in files:
                         full_path = os.path.join(root, file)
@@ -45,7 +48,16 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
             else:
                 engine.update_path_in_index(path)
         else:
-            logger.warning("Path does not exist on disk: %s", path)
+            # File/dir missing on disk: check parent folder to see if it was renamed/moved there
+            parent = os.path.dirname(path)
+            if os.path.isdir(parent):
+                for root, dirs, files in os.walk(parent):
+                    for file in files:
+                        engine.update_path_in_index(os.path.join(root, file))
+                    if not dirs and not files:
+                        engine.update_path_in_index(root)
+            else:
+                logger.warning("Path does not exist on disk: %s", path)
 
     tracker.finish()
     engine.save_index()

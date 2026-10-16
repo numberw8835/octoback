@@ -95,7 +95,7 @@ class Engine:
                 "type": "dir",
                 "hidden": is_hidden,
                 "hash": dir_hash,
-                "size": f"{self._calculate_path_size(path)}"
+                "size": self._calculate_path_size(path)
             }
         elif os.path.isfile(path):
             file_hash = get_file_hash_optimized(path, tracker=tracker)
@@ -111,7 +111,7 @@ class Engine:
                 "hidden": is_hidden,
                 "extension": ext,
                 "hash": file_hash,
-                "size": f"{self._calculate_path_size(path)}"
+                "size": self._calculate_path_size(path)
             }
         else:
             logger.error("Unknown object type: %s", path)

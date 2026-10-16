@@ -36,14 +36,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_update = subparsers.add_parser("update", help="Update tracked paths in index (check modified/moved/copied)")
     p_update.add_argument("paths", nargs="*", default=[], help="Specific paths to update")
     p_update.add_argument("--all", dest="all_flag", action="store_true", help="Update all indexed items")
+    p_update.add_argument("--granular", action="store_true", help="Update directory contents individually")
 
     # remove
     p_remove = subparsers.add_parser("remove", help="Remove paths from tracking index")
     p_remove.add_argument("paths", nargs="+", help="Paths to remove")
 
     # check
-    p_check = subparsers.add_parser("check", help="Verify if a path matches its indexed hash")
-    p_check.add_argument("path", help="Path to check")
+    p_check = subparsers.add_parser("check", help="Verify if paths match their indexed hash")
+    p_check.add_argument("paths", nargs="+", help="Paths to check")
 
     # backup
     p_backup = subparsers.add_parser("backup", help="Backup tracked items to the vault")
@@ -97,14 +98,21 @@ def main():
     if hasattr(args, "path") and args.path:
         args.path = os.path.abspath(args.path)
 
+    # Check if Vault is currently compressed
+    compressed_vault = f"{engine.vault_path}.tar.xz"
+    if args.command in ("backup", "restore") and os.path.exists(compressed_vault):
+        print("Error: The Vault is currently compressed (Vault.tar.xz).")
+        print("Please run `octoback unzip` first before running backup or restore.")
+        sys.exit(1)
+
     if args.command == "add":
         add(engine, args.paths, granular=args.granular)
     elif args.command == "update":
-        update(engine, args.paths, all_flag=args.all_flag)
+        update(engine, args.paths, all_flag=args.all_flag, granular=args.granular)
     elif args.command == "remove":
         remove(engine, args.paths)
     elif args.command == "check":
-        check(engine, args.path)
+        check(engine, args.paths)
     elif args.command == "backup":
         backup(engine, args.paths, all_flag=args.all_flag)
     elif args.command == "restore":
