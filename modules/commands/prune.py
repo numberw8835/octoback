@@ -14,7 +14,7 @@ def prune(engine: Engine) -> None:
     
     for path in paths_to_remove:
         logger.info("Removing missing path from index: %s", path)
-        engine.remove_path_from_index(path)
+        engine.remove_path_from_index(path, action="deleted")
 
     engine.save_index()
     logger.info("Pruned %d paths from index.", len(paths_to_remove))

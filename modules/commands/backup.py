@@ -39,6 +39,7 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False):
     os.makedirs(engine.vault_path, exist_ok=True)
 
     # Step 5: Copy each target into the vault, mirroring its full path structure
+    failed = []
     for path in targets:
         if not os.path.exists(path):
             logger.warning("Target does not exist: %s", path)
@@ -49,7 +50,14 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False):
         rel_path = path.lstrip(os.sep)
         dest_vault_path = os.path.join(engine.vault_path, rel_path)
 
-        copy_to(source=path, destination=dest_vault_path, tracker=tracker)
+        if not copy_to(source=path, destination=dest_vault_path, tracker=tracker):
+            failed.append(path)
 
     # Step 6: Print a final newline after finishing all files
     tracker.finish()
+
+    # Step 7: Report items that were not fully backed up
+    if failed:
+        logger.warning("%d item(s) were not fully backed up:", len(failed))
+        for path in failed:
+            logger.warning("  - %s", path)

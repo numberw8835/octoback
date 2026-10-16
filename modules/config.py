@@ -16,20 +16,22 @@ DEFAULT_CONFIG = {
 }
 
 def load_config(path: str = CONFIG_FILE) -> dict:
-    """Load configuration from a YAML file with fallback to defaults."""
+    """Load configuration from a YAML file with fallback to defaults for missing keys."""
     config = {
         "storage": dict(DEFAULT_CONFIG["storage"]),
         "settings": dict(DEFAULT_CONFIG["settings"]),
     }
     if os.path.exists(path):
+        # A broken config must stop the app, not silently fall back to the default Vault
         try:
             with open(path, "r") as f:
                 data = yaml.safe_load(f) or {}
-                if isinstance(data, dict):
-                    config["storage"].update(data.get("storage", {}))
-                    config["settings"].update(data.get("settings", {}))
-        except Exception:
-            pass
+        except (OSError, yaml.YAMLError) as e:
+            raise SystemExit(f"Error: Could not read config file {path}:\n{e}")
+        if not isinstance(data, dict):
+            raise SystemExit(f"Error: Config file must contain YAML key/value pairs: {path}")
+        config["storage"].update(data.get("storage") or {})
+        config["settings"].update(data.get("settings") or {})
 
     for k, v in config["storage"].items():
         if isinstance(v, str):

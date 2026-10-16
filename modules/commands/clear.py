@@ -29,7 +29,10 @@ def clear_index(engine: Engine, yes_flag: bool = False) -> None:
 
 def clear_vault(engine: Engine, yes_flag: bool = False) -> None:
     """Clears all backup files from the Vault without touching the index or PC files."""
-    if not os.path.exists(engine.vault_path) or not os.listdir(engine.vault_path):
+    compressed_vault = f"{engine.vault_path}.tar.xz"
+    has_files = os.path.isdir(engine.vault_path) and len(os.listdir(engine.vault_path)) > 0
+    has_archive = os.path.exists(compressed_vault)
+    if not has_files and not has_archive:
         logger.info("Vault is already empty.")
         return
 
@@ -43,23 +46,24 @@ def clear_vault(engine: Engine, yes_flag: bool = False) -> None:
             return
 
     count = 0
-    for item in os.listdir(engine.vault_path):
-        item_path = os.path.join(engine.vault_path, item)
-        try:
-            if os.path.isdir(item_path):
-                shutil.rmtree(item_path)
-            else:
-                os.remove(item_path)
-            count += 1
-        except OSError as e:
-            logger.error("Failed to remove %s from Vault: %s", item_path, e)
+    if has_files:
+        for item in os.listdir(engine.vault_path):
+            item_path = os.path.join(engine.vault_path, item)
+            try:
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                else:
+                    os.remove(item_path)
+                count += 1
+            except OSError as e:
+                logger.error("Failed to remove %s from Vault: %s", item_path, e)
 
     # Also remove compressed archive if present
-    compressed_vault = f"{engine.vault_path}.tar.xz"
-    if os.path.exists(compressed_vault):
+    if has_archive:
         try:
             os.remove(compressed_vault)
-        except OSError:
-            pass
+            count += 1
+        except OSError as e:
+            logger.error("Failed to remove %s: %s", compressed_vault, e)
 
     logger.info("Cleared Vault (%d top-level item(s) removed).", count)

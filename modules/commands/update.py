@@ -2,9 +2,27 @@ import logging
 import os
 from typing import List
 from ..engine import Engine
-from ..utils import DualProgressBar
+from ..utils import DualProgressBar, get_file_hash_optimized
 
 logger = logging.getLogger("octoback.update")
+
+
+def find_moved_file(engine: Engine, missing_path: str) -> str | None:
+    """Looks next to a missing tracked file for an untracked file with the same content."""
+    entry = engine.index.get(missing_path)
+    if not entry or entry.get("type") != "file":
+        return None
+
+    for root, _, files in os.walk(os.path.dirname(missing_path)):
+        for name in files:
+            candidate = os.path.join(root, name)
+            # Compare sizes first so only real candidates get hashed
+            if (candidate not in engine.index
+                    and os.path.isfile(candidate)
+                    and os.path.getsize(candidate) == entry.get("size")
+                    and get_file_hash_optimized(candidate) == entry.get("hash")):
+                return candidate
+    return None
 
 
 def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool = False, granular: bool = False) -> None:
@@ -52,14 +70,11 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
         elif os.path.exists(path):
             process(path)
         else:
-            parent = os.path.dirname(path)
-            if os.path.isdir(parent):
-                for root, dirs, files in os.walk(parent):
-                    for f in files:
-                        process(os.path.join(root, f))
-                    if not dirs and not files:
-                        process(root)
-            engine.update_path_in_index(path)
+            moved_to = find_moved_file(engine, path)
+            if moved_to:
+                process(moved_to)  # Recorded as "moved"
+            else:
+                engine.update_path_in_index(path)  # Recorded as "deleted"
 
     tracker.finish()
     engine.save_index()

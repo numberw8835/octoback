@@ -54,12 +54,20 @@ def restore(engine: Engine, input: List[str], all_flag: bool = False):
     tracker = DualProgressBar(total_bytes=total_bytes)
 
     # Step 5: Restore each item from vault back to its destination
+    failed = []
     for vault_path, dest_path in restore_pairs:
         parent_dir = os.path.dirname(dest_path)
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
 
-        copy_to(vault_path, dest_path, tracker=tracker)
+        if not copy_to(vault_path, dest_path, tracker=tracker):
+            failed.append(dest_path)
 
     # Step 6: Print a final newline after finishing all files
     tracker.finish()
+
+    # Step 7: Report items that were not fully restored
+    if failed:
+        logger.warning("%d item(s) were not fully restored:", len(failed))
+        for path in failed:
+            logger.warning("  - %s", path)

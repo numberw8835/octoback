@@ -51,7 +51,7 @@ def show_history(engine: Engine, limit: int = 20) -> None:
     print("-" * 75)
     for entry in display_entries:
         timestamp = entry.get("time", "Unknown time")
-        action = entry.get("action", "").upper().ljust(8)
+        action = entry.get("action", "").upper().ljust(9)
         path = entry.get("path", "")
         origin = entry.get("origin")
 

@@ -133,11 +133,13 @@ class Engine:
         except OSError:
             pass
 
-    def remove_path_from_index(self, path: str) -> None:
-        """removes a path from the index"""
+    def remove_path_from_index(self, path: str, action: str = "untracked") -> None:
+        """removes a path from the index
+        action: "untracked" when the user stops tracking it, "deleted" when it vanished from disk
+        """
         if path in self.index:
             del self.index[path]
-            self._record_history("removed", path)
+            self._record_history(action, path)
             logger.info("Removed path: %s", path)
         else:
             logger.warning("Path not found in index: %s", path)
@@ -147,9 +149,9 @@ class Engine:
         if not os.path.exists(path):
             if path in self.index:
                 del self.index[path]
-                self._record_history("removed", path)
-                logger.info("Removed: %s", path)
-                return "removed"
+                self._record_history("deleted", path)
+                logger.info("Deleted: %s", path)
+                return "deleted"
             logger.error("Path does not exist: %s", path)
             return
 
@@ -159,9 +161,20 @@ class Engine:
         if not current_hash:
             return
 
+        # Check if path is already in index
+        if path in self.index:
+            if self.index[path].get("hash") == current_hash:
+                logger.info("No change done: %s", path)
+                return "unchanged"
+            else:
+                self.add_path_to_index(path)
+                self._record_history("modified", path)
+                logger.info("Modified: %s", path)
+                return "modified"
+
         empty_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-        # Check if an existing missing entry was moved to this path (ignoring empty files)
+        # Path is not in index: check if a missing entry was moved here (ignoring empty files)
         if current_hash != empty_hash:
             missing_matches = [
                 old_p for old_p, data in self.index.items()
@@ -175,18 +188,7 @@ class Engine:
                 self.add_path_to_index(path)
                 return "moved"
 
-        # Check if path is already in index
-        if path in self.index:
-            if self.index[path].get("hash") == current_hash:
-                logger.info("No change done: %s", path)
-                return "unchanged"
-            else:
-                self.add_path_to_index(path)
-                self._record_history("modified", path)
-                logger.info("Modified: %s", path)
-                return "modified"
-
-        # Path is not in index: check for copied files
+        # Check for copied files
         if current_hash != empty_hash:
             copied_matches = [
                 p for p, data in self.index.items()

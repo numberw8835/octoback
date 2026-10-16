@@ -104,10 +104,14 @@ def main():
         print("Octoback initialized successfully.")
         return
 
-    # Check if Octoback has been initialized
-    if not engine._loaded and not os.path.exists(engine.index_path):
-        print("Error: Octoback has not been initialized yet.")
-        print("Please run `octoback init` first.")
+    # Stop if the index is missing or could not be loaded
+    if not engine._loaded:
+        if os.path.exists(engine.index_path):
+            print(f"Error: The index file is corrupted: {engine.index_path}")
+            print("Fix it by hand, or delete it and run `octoback init` (this resets tracking).")
+        else:
+            print("Error: Octoback has not been initialized yet.")
+            print("Please run `octoback init` first.")
         sys.exit(1)
 
     # Normalize input paths to absolute paths directly at the CLI level
@@ -118,9 +122,9 @@ def main():
 
     # Check if Vault is currently compressed
     compressed_vault = f"{engine.vault_path}.tar.xz"
-    if args.command in ("backup", "restore") and os.path.exists(compressed_vault):
+    if args.command in ("backup", "restore", "vault") and os.path.exists(compressed_vault):
         print("Error: The Vault is currently compressed (Vault.tar.xz).")
-        print("Please run `octoback unzip` first before running backup or restore.")
+        print(f"Please run `octoback unzip` first before running {args.command}.")
         sys.exit(1)
 
     if args.command == "add":

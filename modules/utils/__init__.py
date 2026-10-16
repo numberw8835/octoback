@@ -6,6 +6,7 @@ from .utils import (
     get_dir_hash_optimized,
     get_file_hash,
     get_file_hash_optimized,
+    is_inside,
     sorted_dirs_and_files,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "get_dir_hash_optimized",
     "get_file_hash",
     "get_file_hash_optimized",
+    "is_inside",
     "sorted_dirs_and_files",
 ]

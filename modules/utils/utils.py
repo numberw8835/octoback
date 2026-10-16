@@ -1,5 +1,7 @@
 import hashlib
 import os
+import shutil
+import tempfile
 
 def get_file_hash(file_path: str):
     """returns the hash digest of the file"""
@@ -101,6 +103,7 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
     2. Only hashes if destination exists and sizes match.
     3. Streams in 64MB chunks with atomic temp file rename.
     """
+    tmp_dest = None
     try:
         dest_file = os.path.join(destination, os.path.basename(source)) if os.path.isdir(destination) else destination
 
@@ -123,31 +126,28 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
 
-        # Atomic copy in 64MB chunks (ensure temp filename <= 255 bytes limit)
-        base_name = os.path.basename(dest_file)
-        if len(base_name.encode("utf-8")) + 13 > 255:
-            safe_base = base_name[:240]
-            tmp_dest = os.path.join(parent_dir, f"{safe_base}.tmp")
-        else:
-            tmp_dest = f"{dest_file}.octoback.tmp"
+        # Atomic copy in 64MB chunks through a short, unique temp file in the same folder
+        fd, tmp_dest = tempfile.mkstemp(dir=parent_dir, prefix=".octoback-", suffix=".tmp")
 
         chunk_size = 64 * 1024 * 1024
 
         if tracker:
             tracker.start_file(os.path.basename(source), os.path.getsize(source))
 
-        with open(source, "rb") as src, open(tmp_dest, "wb") as dst:
+        with os.fdopen(fd, "wb") as dst, open(source, "rb") as src:
             for chunk in iter(lambda: src.read(chunk_size), b""):
                 dst.write(chunk)
                 if tracker:
                     tracker.update(len(chunk))
 
+        # Keep permissions and timestamps (e.g. 600 on ssh keys, +x on scripts)
+        shutil.copystat(source, tmp_dest)
         os.replace(tmp_dest, dest_file)
         return True
 
     except OSError as e:
         print(f"Error copying file {source} to {destination}: {e}")
-        if 'tmp_dest' in locals() and os.path.exists(tmp_dest):
+        if tmp_dest and os.path.exists(tmp_dest):
             try:
                 os.remove(tmp_dest)
             except OSError:
@@ -173,8 +173,12 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
             if src_dir_hash and src_dir_hash == dst_dir_hash:
                 return True  # Whole directory is identical, skip!
 
-        # Walk and copy/update files
+        # Walk and copy/update files, keep going on errors and report at the end
+        all_copied = True
         for root, dirs, files in sorted_dirs_and_files(os.walk(source)):
+            # Never walk into the destination itself (e.g. backing up ~ while the Vault is ~/Vault)
+            dirs[:] = [d for d in dirs if not is_inside(target_dir, os.path.join(root, d))]
+
             rel_path = os.path.relpath(root, source)
             current_dest = target_dir if rel_path == "." else os.path.join(target_dir, rel_path)
             os.makedirs(current_dest, exist_ok=True)
@@ -186,9 +190,9 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
                     continue
                 dst_file = os.path.join(current_dest, file)
                 if not copy_file_to(src_file, dst_file, tracker=tracker):
-                    return False
+                    all_copied = False
 
-        return True
+        return all_copied
     except OSError as e:
         print(f"Error copying directory {source} to {destination}: {e}")
         return False
@@ -208,35 +212,35 @@ def copy_to(source: str, destination: str, tracker: DualProgressBar | None = Non
         return False
 
 def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = None) -> str:
-    """returns a stable hexdigest of a directory's contents"""
+    """returns a stable hexdigest of a directory's structure and contents"""
     if not os.path.isdir(dir_path):
         print(f"Directory not found: {dir_path}")
         return ""
     sha256_hash = hashlib.sha256()
     try:
+        # One line per entry: "sub/" for a folder, "sub/b.txt\0<file hash>" for a file
         for root, dirs, files in sorted_dirs_and_files(os.walk(dir_path)):
+            for name in dirs:
+                rel = os.path.relpath(os.path.join(root, name), dir_path)
+                sha256_hash.update(os.fsencode(f"{rel}/\n"))
             for name in files:
                 file_path = os.path.join(root, name)
                 # Skip symlinks to prevent infinite loops
                 if os.path.islink(file_path) or not os.path.isfile(file_path):
                     continue
+                file_hash = get_file_hash_optimized(file_path, tracker=tracker)
+                if not file_hash:
+                    return ""  # Unreadable file: fail instead of pretending it matches
                 rel = os.path.relpath(file_path, dir_path)
-                sha256_hash.update(rel.encode())  # structure matters
-                try:
-                    if tracker:
-                        tracker.start_file(name, os.path.getsize(file_path))
-                    with open(file_path, "rb") as f:
-                        for chunk in iter(lambda: f.read(64 * 1024 ** 2), b""):
-                            sha256_hash.update(chunk)
-                            if tracker:
-                                tracker.update(len(chunk))
-                except OSError:
-                    # Ignore transient or unreadable files inside the directory
-                    continue
+                sha256_hash.update(os.fsencode(f"{rel}\0{file_hash}\n"))
         return sha256_hash.hexdigest()
     except OSError as e:
         print(f"Error accessing directory {dir_path}: {e}")
         return ""
+
+def is_inside(path: str, folder: str) -> bool:
+    """True if path is the folder itself or somewhere inside it"""
+    return path == folder or path.startswith(folder + os.sep)
 
 def sorted_dirs_and_files(walk):
     """generator that yields (root, sorted(dirs), sorted(files))"""
