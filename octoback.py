@@ -10,7 +10,7 @@ from modules.commands.clear import clear_index, clear_vault
 from modules.commands.prune import prune
 from modules.commands.remove import remove
 from modules.commands.restore import restore
-from modules.commands.show import show
+from modules.commands.show import show, show_history
 from modules.commands.unzip import unzip_vault
 from modules.commands.update import update
 from modules.commands.vault import clean_vault
@@ -62,7 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("prune", help="Remove non-existent paths from the index")
 
     # show
-    subparsers.add_parser("show", help="List all tracked paths in the index")
+    p_show = subparsers.add_parser("show", help="Display tracked paths or change history")
+    p_show.add_argument("target", nargs="?", choices=["history"], help="Optional target: 'history' to display change history")
+    p_show.add_argument("-n", "--limit", type=int, default=20, help="Number of history events to display (default: 20, 0 for all)")
 
     # zip (compress Vault in-place)
     subparsers.add_parser("zip", help="Compress the Vault directory in-place")
@@ -136,7 +138,10 @@ def main():
     elif args.command == "prune":
         prune(engine)
     elif args.command == "show":
-        show(engine)
+        if args.target == "history":
+            show_history(engine, limit=args.limit)
+        else:
+            show(engine)
     elif args.command == "zip":
         zip_vault(engine)
     elif args.command == "unzip":
