@@ -2,7 +2,7 @@ import logging
 import os
 from typing import List
 from modules.engine import Engine
-from .utils import get_dir_hash_optimized, get_file_hash_optimized
+from ..utils import get_dir_hash_optimized, get_file_hash_optimized
 
 logger = logging.getLogger("octoback.check")
 

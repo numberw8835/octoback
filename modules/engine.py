@@ -145,6 +145,11 @@ class Engine:
     def update_path_in_index(self, path: str):
         """checks if a path is new, moved, or copied"""
         if not os.path.exists(path):
+            if path in self.index:
+                del self.index[path]
+                self._record_history("removed", path)
+                logger.info("Removed: %s", path)
+                return "removed"
             logger.error("Path does not exist: %s", path)
             return
 

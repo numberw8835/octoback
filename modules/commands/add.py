@@ -3,7 +3,7 @@ import os
 from typing import List
 from ..engine import Engine
 
-from .utils import DualProgressBar
+from ..utils import DualProgressBar
 
 logger = logging.getLogger("octoback.add")
 

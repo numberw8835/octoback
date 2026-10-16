@@ -2,7 +2,7 @@ import logging
 import os
 from typing import List
 from modules.engine import Engine
-from .utils import DualProgressBar, copy_to
+from ..utils import DualProgressBar, copy_to
 
 logger = logging.getLogger("octoback.restore")
 

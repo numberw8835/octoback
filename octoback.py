@@ -3,16 +3,17 @@ import logging
 import os
 import sys
 from modules.engine import Engine
-from modules.utils.add import add
-from modules.utils.backup import backup
-from modules.utils.check import check
-from modules.utils.prune import prune
-from modules.utils.remove import remove
-from modules.utils.restore import restore
-from modules.utils.show import show
-from modules.utils.unzip import unzip_vault
-from modules.utils.update import update
-from modules.utils.zip import zip_vault
+from modules.commands.add import add
+from modules.commands.backup import backup
+from modules.commands.check import check
+from modules.commands.prune import prune
+from modules.commands.remove import remove
+from modules.commands.restore import restore
+from modules.commands.show import show
+from modules.commands.unzip import unzip_vault
+from modules.commands.update import update
+from modules.commands.vault import clean_vault
+from modules.commands.zip import zip_vault
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -67,6 +68,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     # unzip (decompress Vault in-place)
     subparsers.add_parser("unzip", help="Decompress the Vault archive in-place")
+
+    # vault
+    p_vault = subparsers.add_parser("vault", help="Vault maintenance and cleanup commands")
+    vault_subparsers = p_vault.add_subparsers(dest="vault_action", help="Vault action")
+    p_vclean = vault_subparsers.add_parser("clean", help="Remove ghost files from the Vault using history")
+    p_vclean.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     return parser
 
@@ -125,6 +132,11 @@ def main():
         zip_vault(engine)
     elif args.command == "unzip":
         unzip_vault(engine)
+    elif args.command == "vault":
+        if args.vault_action == "clean":
+            clean_vault(engine, yes_flag=args.yes)
+        else:
+            parser.parse_args(["vault", "--help"])
 
 
 if __name__ == "__main__":
