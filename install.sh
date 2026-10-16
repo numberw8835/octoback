@@ -21,7 +21,7 @@ if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv "$VENV_DIR"
 fi
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
-"$VENV_DIR/bin/pip" install --quiet --upgrade nuitka pyyaml patchelf zstandard
+"$VENV_DIR/bin/pip" install --quiet --upgrade nuitka pyyaml blake3 patchelf zstandard
 
 # Step 3: Compile into one self-contained file (venv first in PATH so Nuitka finds patchelf)
 echo "==> Compiling with Nuitka (this takes a few minutes)..."

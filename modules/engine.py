@@ -2,7 +2,7 @@ import json
 import os
 import time
 import logging
-from .utils.utils import get_dir_hash_optimized, get_file_hash_optimized
+from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_quick_signature
 from .config import CONFIG_FILE, load_config, create_default_config
 
 logger = logging.getLogger("octoback.engine")
@@ -75,34 +75,41 @@ class Engine:
                 except OSError:
                     pass
                     
-    def add_path_to_index(self, path: str, tracker=None) -> bool:
-        """adds a path to the index"""
+    def add_path_to_index(self, path: str, tracker=None, path_hash: str = "", signature: str = "") -> bool:
+        """adds a path to the index
+        path_hash / signature: pass them when already computed, so the files aren't read twice
+        """
         if not os.path.exists(path):
             logger.error("Path does not exist: %s", path)
             return False
 
         is_hidden = os.path.basename(path).startswith(".")
+        # Take the signature before hashing, so a change made during hashing is caught next time
+        signature = signature or get_quick_signature(path)
 
         if os.path.isdir(path):
-            dir_hash = get_dir_hash_optimized(path, tracker=tracker)
+            dir_hash = path_hash or get_dir_hash_optimized(path, tracker=tracker)
             if not dir_hash:
                 logger.error("Failed to hash directory: %s", path)
                 return False
             if path in self.index and self.index[path].get("hash") == dir_hash:
+                self.index[path]["signature"] = signature
                 logger.info("No change done!")
                 return True
             self.index[path] = {
                 "type": "dir",
                 "hidden": is_hidden,
                 "hash": dir_hash,
+                "signature": signature,
                 "size": self._calculate_path_size(path)
             }
         elif os.path.isfile(path):
-            file_hash = get_file_hash_optimized(path, tracker=tracker)
+            file_hash = path_hash or get_file_hash_optimized(path, tracker=tracker)
             if not file_hash:
                 logger.error("Failed to hash file: %s", path)
                 return False
             if path in self.index and self.index[path].get("hash") == file_hash:
+                self.index[path]["signature"] = signature
                 logger.info("No change done!")
                 return True
             ext = os.path.splitext(path)[1].lstrip(".") or None
@@ -111,6 +118,7 @@ class Engine:
                 "hidden": is_hidden,
                 "extension": ext,
                 "hash": file_hash,
+                "signature": signature,
                 "size": self._calculate_path_size(path)
             }
         else:
@@ -157,6 +165,13 @@ class Engine:
 
         is_dir = os.path.isdir(path)
         path_type = "dir" if is_dir else "file"
+
+        # Fast path: same sizes and modification times as last time, no need to read the contents
+        signature = get_quick_signature(path)
+        if signature and path in self.index and self.index[path].get("signature") == signature:
+            logger.info("No change done: %s", path)
+            return "unchanged"
+
         current_hash = get_dir_hash_optimized(path) if is_dir else get_file_hash_optimized(path)
         if not current_hash:
             return
@@ -164,18 +179,18 @@ class Engine:
         # Check if path is already in index
         if path in self.index:
             if self.index[path].get("hash") == current_hash:
+                # Touched but not changed: remember the new signature so it isn't hashed again
+                self.index[path]["signature"] = signature
                 logger.info("No change done: %s", path)
                 return "unchanged"
             else:
-                self.add_path_to_index(path)
+                self.add_path_to_index(path, path_hash=current_hash, signature=signature)
                 self._record_history("modified", path)
                 logger.info("Modified: %s", path)
                 return "modified"
 
-        empty_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
         # Path is not in index: check if a missing entry was moved here (ignoring empty files)
-        if current_hash != empty_hash:
+        if current_hash != EMPTY_HASH:
             missing_matches = [
                 old_p for old_p, data in self.index.items()
                 if old_p != path and data.get("type") == path_type and data.get("hash") == current_hash and not os.path.exists(old_p)
@@ -185,22 +200,22 @@ class Engine:
                     del self.index[old_p]
                     self._record_history("moved", path, old_p)
                     logger.info("Moved: %s -> %s", old_p, path)
-                self.add_path_to_index(path)
+                self.add_path_to_index(path, path_hash=current_hash, signature=signature)
                 return "moved"
 
         # Check for copied files
-        if current_hash != empty_hash:
+        if current_hash != EMPTY_HASH:
             copied_matches = [
                 p for p, data in self.index.items()
                 if p != path and data.get("type") == path_type and data.get("hash") == current_hash and os.path.exists(p)
             ]
             if copied_matches:
-                self.add_path_to_index(path)
+                self.add_path_to_index(path, path_hash=current_hash, signature=signature)
                 self._record_history("copied", path, copied_matches[0])
                 logger.info("Copied: %s is copy of %s", path, copied_matches[0])
                 return "copied"
 
-        self.add_path_to_index(path)
+        self.add_path_to_index(path, path_hash=current_hash, signature=signature)
         self._record_history("new", path)
         return "new"
 

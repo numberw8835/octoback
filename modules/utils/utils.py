@@ -1,35 +1,46 @@
-import hashlib
 import os
 import shutil
 import tempfile
+from blake3 import blake3
 
-def get_file_hash(file_path: str):
-    """returns the hash digest of the file"""
-    sha256_hash = hashlib.sha256()
-    try:
-        with open(file_path, 'rb') as f:
-            sha256_hash.update(f.read())
-            result = sha256_hash.hexdigest()
-            return result
-    except FileNotFoundError:
-        print(f"File not found: {file_path}")
-        return ""
+# BLAKE3 hash of no data at all (an empty file or an empty folder)
+EMPTY_HASH = blake3().hexdigest()
 
 def get_file_hash_optimized(file_path: str, tracker: "DualProgressBar | None" = None) -> str:
-    """returns the hexdigest of a file in chunks of 64MB"""
-    sha256_hash = hashlib.sha256()
+    """returns the BLAKE3 hexdigest of a file, read in chunks of 64MB and hashed on all CPU cores"""
+    file_hash = blake3(max_threads=blake3.AUTO)
     try:
         if tracker:
             tracker.start_file(os.path.basename(file_path), os.path.getsize(file_path))
         with open(file_path, "rb") as f:
             for chunk in iter(lambda: f.read(64 * 1024 ** 2), b""):
-                sha256_hash.update(chunk)
+                file_hash.update(chunk)
                 if tracker:
                     tracker.update(len(chunk))
-        return sha256_hash.hexdigest()
+        return file_hash.hexdigest()
     except OSError as e:
         print(f"Error reading file {file_path}: {e}")
         return ""
+
+def get_quick_signature(path: str) -> str:
+    """
+    Cheap fingerprint built only from sizes and modification times, no file contents are read.
+    If it is the same as last time, the contents haven't changed and hashing can be skipped.
+    """
+    try:
+        if os.path.isfile(path):
+            stat = os.stat(path)
+            return f"{stat.st_size}:{stat.st_mtime_ns}"
+        signature = blake3()
+        for root, dirs, files in sorted_dirs_and_files(os.walk(path)):
+            for name in dirs + files:
+                entry_path = os.path.join(root, name)
+                stat = os.lstat(entry_path)
+                rel = os.path.relpath(entry_path, path)
+                signature.update(os.fsencode(f"{rel}\0{stat.st_size}:{stat.st_mtime_ns}\n"))
+        return signature.hexdigest()
+    except OSError:
+        return ""  # Unknown signature: never matches, so the path gets hashed
 
 class DualProgressBar:
     """Renders dual progress: [total: ▮▮▮ 2% | file_name : ▮▮▮▮▮▮ 24%]"""
@@ -74,6 +85,16 @@ class DualProgressBar:
         self.current_file_bytes += chunk_bytes
         self.render()
 
+    def update_total(self, chunk_bytes: int):
+        """Advance only the total bar (when total and file are measured differently, e.g. unzip)."""
+        self.copied_total_bytes += chunk_bytes
+        self.render()
+
+    def update_file(self, chunk_bytes: int):
+        """Advance only the file bar."""
+        self.current_file_bytes += chunk_bytes
+        self.render()
+
     def render(self):
         total_pct = min(100, int((self.copied_total_bytes / self.total_bytes) * 100))
         file_pct = min(100, int((self.current_file_bytes / self.current_file_total) * 100))
@@ -96,11 +117,26 @@ class DualProgressBar:
             self.sys.stdout.write("\n")
         self.sys.stdout.flush()
 
+class ProgressReader:
+    """Wraps an open file and reports the size of every read to on_read (e.g. tracker.update)."""
+    def __init__(self, f, on_read):
+        self.f = f
+        self.on_read = on_read
+
+    def read(self, size: int = -1) -> bytes:
+        data = self.f.read(size)
+        self.on_read(len(data))
+        return data
+
+    def __getattr__(self, name):
+        # Everything else (seek, tell, close...) goes straight to the real file
+        return getattr(self.f, name)
+
 def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None = None) -> bool:
     """
     Optimized file copy:
-    1. Size check first (O(1)) - skips hashing if sizes differ.
-    2. Only hashes if destination exists and sizes match.
+    1. Same size and modification time - already up to date, nothing is read.
+    2. Same size but different time - compares content hashes before copying.
     3. Streams in 64MB chunks with atomic temp file rename.
     """
     tmp_dest = None
@@ -112,13 +148,18 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
             src_stat = os.stat(source)
             dst_stat = os.stat(dest_file)
 
-            # If sizes match, verify content hash
             if src_stat.st_size == dst_stat.st_size:
+                # Copies keep the source modification time, so a match means nothing changed
+                if src_stat.st_mtime_ns == dst_stat.st_mtime_ns:
+                    return True
+
+                # Times differ (e.g. a drive with coarse timestamps): verify content hash
                 if tracker:
                     tracker.scanning(os.path.basename(source))
                 src_hash = get_file_hash_optimized(source)
                 dst_hash = get_file_hash_optimized(dest_file)
                 if src_hash and src_hash == dst_hash:
+                    shutil.copystat(source, dest_file)  # Sync the time so next run takes the fast path
                     return True  # Identical, skip copying!
 
         # Need to copy: ensure parent directory exists
@@ -157,21 +198,11 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
 def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None = None) -> bool:
     """
     Optimized directory copy:
-    1. Skips entirely if directory hash already matches target.
-    2. Otherwise, copies individual files using optimized copy_file_to.
+    copies individual files using copy_file_to, which skips files that are already up to date.
     """
     try:
         target_dir = destination
         os.makedirs(target_dir, exist_ok=True)
-
-        # Directory-level fast path: skip if entire directory hash matches
-        if os.path.isdir(target_dir):
-            if tracker:
-                tracker.scanning(os.path.basename(source.rstrip(os.sep)))
-            src_dir_hash = get_dir_hash_optimized(source)
-            dst_dir_hash = get_dir_hash_optimized(target_dir)
-            if src_dir_hash and src_dir_hash == dst_dir_hash:
-                return True  # Whole directory is identical, skip!
 
         # Walk and copy/update files, keep going on errors and report at the end
         all_copied = True
@@ -216,13 +247,13 @@ def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = No
     if not os.path.isdir(dir_path):
         print(f"Directory not found: {dir_path}")
         return ""
-    sha256_hash = hashlib.sha256()
+    dir_hash = blake3()
     try:
         # One line per entry: "sub/" for a folder, "sub/b.txt\0<file hash>" for a file
         for root, dirs, files in sorted_dirs_and_files(os.walk(dir_path)):
             for name in dirs:
                 rel = os.path.relpath(os.path.join(root, name), dir_path)
-                sha256_hash.update(os.fsencode(f"{rel}/\n"))
+                dir_hash.update(os.fsencode(f"{rel}/\n"))
             for name in files:
                 file_path = os.path.join(root, name)
                 # Skip symlinks to prevent infinite loops
@@ -232,8 +263,8 @@ def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = No
                 if not file_hash:
                     return ""  # Unreadable file: fail instead of pretending it matches
                 rel = os.path.relpath(file_path, dir_path)
-                sha256_hash.update(os.fsencode(f"{rel}\0{file_hash}\n"))
-        return sha256_hash.hexdigest()
+                dir_hash.update(os.fsencode(f"{rel}\0{file_hash}\n"))
+        return dir_hash.hexdigest()
     except OSError as e:
         print(f"Error accessing directory {dir_path}: {e}")
         return ""

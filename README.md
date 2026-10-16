@@ -18,7 +18,8 @@
 
 ## Why Octoback
 
-- **Hash-based tracking.** Every file and folder is fingerprinted with SHA-256, so Octoback knows exactly what changed.
+- **Hash-based tracking.** Every file and folder is fingerprinted with BLAKE3, so Octoback knows exactly what changed.
+- **Fast on repeat runs.** Files whose size and modification time haven't changed are skipped without being read.
 - **Knows what happened.** It can tell whether a file was *modified*, *moved*, *copied*, *deleted* or is *new*, and keeps a history of it.
 - **Plain-folder Vault.** Backups are ordinary files that mirror your real paths. No proprietary format, nothing to unlock.
 - **Only copies what changed.** Identical files are skipped, and new ones are written atomically so a failed copy never leaves half a file.
@@ -42,7 +43,7 @@ Build tools are installed into `build/venv`, so your system Python is left untou
 <summary>Run from source instead</summary>
 
 ```bash
-pip install pyyaml
+pip install pyyaml blake3
 python3 octoback.py init
 ```
 </details>
