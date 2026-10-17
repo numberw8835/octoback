@@ -64,6 +64,7 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False) -> bool:
         logger.warning("Not fully backed up: %s", short_path(path))
     copied = tracker.copied_count
     parts = [count_part(copied, "copied") + (f" ({format_size(tracker.read_bytes)})" if copied else ""),
-             count_part(tracker.skipped_count, "unchanged"), count_part(len(failed), "failed")]
+             count_part(tracker.skipped_count, "unchanged"), count_part(len(failed), "failed"),
+             count_part(tracker.symlinks_skipped, "symlinks skipped")]
     print(format_summary("Backup done", parts, time.monotonic() - start_time, not failed))
     return not failed

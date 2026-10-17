@@ -1,7 +1,9 @@
 import argparse
+import fcntl
 import os
 import sys
 import time
+from modules.config import CONFIG_DIR
 from modules.engine import Engine
 from modules.commands.add import add
 from modules.commands.backup import backup
@@ -111,6 +113,25 @@ def wait_for_vault(vault_path: str) -> None:
     print(f"{paint('✓', 'green')} Vault found, continuing.")
 
 
+def wait_for_index_lock():
+    """
+    Locks ~/.octoback/octoback.lock until this command ends, waiting if another command holds it,
+    so two commands never overwrite each other's index changes. Linux frees the lock on exit or crash.
+    """
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    lock_file = open(os.path.join(CONFIG_DIR, "octoback.lock"), "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(f"{paint('⚠', 'yellow')} Waiting for another octoback command to finish ...")
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+        except KeyboardInterrupt:
+            print(f"\n{paint('✗', 'red')} Cancelled.")
+            sys.exit(1)
+    return lock_file  # Keep it open: closing the file would release the lock
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -119,6 +140,10 @@ def main():
         print(format_header() + "\n")
         parser.print_help()
         sys.exit(0)
+
+    # Commands that change the index wait for any other one to finish, before loading the index
+    if args.command in ("add", "update", "remove", "prune") or getattr(args, "clear_target", None) == "index":
+        index_lock = wait_for_index_lock()
 
     engine = Engine()
 

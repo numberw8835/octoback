@@ -41,6 +41,8 @@ def add(engine: Engine, input_list: List[str], granular: bool = False) -> bool:
             failed += 1
 
     for path in input_list:
+        if os.path.islink(path):
+            logger.warning("%s is a symlink: Octoback backs up what it points to, not the link itself", short_path(path))
         if os.path.exists(path):
             if os.path.isdir(path) and granular:
                 for root, dirs, files in os.walk(path):

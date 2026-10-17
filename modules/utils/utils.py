@@ -61,6 +61,7 @@ class DualProgressBar:
         self.files_copied_count = 0  # Files started (hashed, copied or extracted)
         self.copied_count = 0        # Files copied successfully, for backup/restore summaries
         self.skipped_count = 0
+        self.symlinks_skipped = 0    # Symlinks are not backed up, only counted
         self.start_time = time.monotonic()
         self.last_render = 0.0
         self.enabled = sys.stdout.isatty()  # No bar when output goes to a file or a pipe
@@ -248,6 +249,10 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
             # Never walk into the destination itself (e.g. backing up ~ while the Vault is ~/Vault)
             dirs[:] = [d for d in dirs if not is_inside(target_dir, os.path.join(root, d))]
 
+            # Symlinked folders are never walked, so count them here
+            if tracker:
+                tracker.symlinks_skipped += sum(os.path.islink(os.path.join(root, d)) for d in dirs)
+
             rel_path = os.path.relpath(root, source)
             current_dest = target_dir if rel_path == "." else os.path.join(target_dir, rel_path)
             os.makedirs(current_dest, exist_ok=True)
@@ -255,7 +260,11 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
             for file in files:
                 src_file = os.path.join(root, file)
                 # Skip symlinks or non-regular files to prevent infinite loops/issues
-                if os.path.islink(src_file) or not os.path.isfile(src_file):
+                if os.path.islink(src_file):
+                    if tracker:
+                        tracker.symlinks_skipped += 1
+                    continue
+                if not os.path.isfile(src_file):
                     continue
                 dst_file = os.path.join(current_dest, file)
                 if not copy_file_to(src_file, dst_file, tracker=tracker):
