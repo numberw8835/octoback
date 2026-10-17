@@ -7,12 +7,36 @@ from ..utils import DualProgressBar, copy_to
 logger = logging.getLogger("octoback.restore")
 
 
-def restore(engine: Engine, input: List[str], all_flag: bool = False):
+def is_different(vault_file: str, dest_file: str) -> bool:
+    """True if dest_file exists and doesn't look like the Vault copy (size or modification time differ)."""
+    if not os.path.isfile(dest_file):
+        return False
+    vault_stat = os.stat(vault_file)
+    dest_stat = os.stat(dest_file)
+    return vault_stat.st_size != dest_stat.st_size or vault_stat.st_mtime_ns != dest_stat.st_mtime_ns
+
+
+def find_files_to_overwrite(vault_path: str, dest_path: str) -> List[str]:
+    """Lists your existing files that restoring vault_path would replace."""
+    if os.path.isfile(vault_path):
+        return [dest_path] if is_different(vault_path, dest_path) else []
+
+    overwritten = []
+    for root, _, files in os.walk(vault_path):
+        for name in files:
+            vault_file = os.path.join(root, name)
+            dest_file = os.path.join(dest_path, os.path.relpath(vault_file, vault_path))
+            if is_different(vault_file, dest_file):
+                overwritten.append(dest_file)
+    return overwritten
+
+
+def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_flag: bool = False):
     # Step 1: Decide what paths to restore
     if all_flag:
         targets = list(engine.index.keys())
     else:
-        targets = input
+        targets = input_list
 
     if not targets:
         logger.warning("No targets specified for restore.")
@@ -36,7 +60,23 @@ def restore(engine: Engine, input: List[str], all_flag: bool = False):
         logger.warning("No valid items found in vault to restore.")
         return
 
-    # Step 3: Calculate total bytes across all vault items to restore
+    # Step 3: Ask before replacing any of your existing files that differ from the Vault copy
+    overwritten = []
+    for vault_path, dest_path in restore_pairs:
+        overwritten += find_files_to_overwrite(vault_path, dest_path)
+
+    if overwritten and not yes_flag:
+        print(f"\nRestoring will overwrite {len(overwritten)} existing file(s) that differ from the Vault:")
+        for path in overwritten[:20]:
+            print(f"  - {path}")
+        if len(overwritten) > 20:
+            print(f"  ... and {len(overwritten) - 20} more")
+        confirm = input("\nDo you want to overwrite them with the Vault copies? (yes/no): ").strip().lower()
+        if confirm not in ("y", "yes"):
+            print("Restore aborted. Nothing was changed.")
+            return
+
+    # Step 4: Calculate total bytes across all vault items to restore
     total_bytes = 0
     for vault_path, _ in restore_pairs:
         if os.path.isfile(vault_path):
@@ -50,10 +90,10 @@ def restore(engine: Engine, input: List[str], all_flag: bool = False):
                     except OSError:
                         pass
 
-    # Step 4: Create the progress tracker with the total bytes
+    # Step 5: Create the progress tracker with the total bytes
     tracker = DualProgressBar(total_bytes=total_bytes)
 
-    # Step 5: Restore each item from vault back to its destination
+    # Step 6: Restore each item from vault back to its destination
     failed = []
     for vault_path, dest_path in restore_pairs:
         parent_dir = os.path.dirname(dest_path)
@@ -63,10 +103,10 @@ def restore(engine: Engine, input: List[str], all_flag: bool = False):
         if not copy_to(vault_path, dest_path, tracker=tracker):
             failed.append(dest_path)
 
-    # Step 6: Print a final newline after finishing all files
+    # Step 7: Print a final newline after finishing all files
     tracker.finish()
 
-    # Step 7: Report items that were not fully restored
+    # Step 8: Report items that were not fully restored
     if failed:
         logger.warning("%d item(s) were not fully restored:", len(failed))
         for path in failed:

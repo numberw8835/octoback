@@ -59,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_restore = subparsers.add_parser("restore", help="Restore items from the vault")
     p_restore.add_argument("paths", nargs="*", default=[], help="Specific paths to restore")
     p_restore.add_argument("--all", dest="all_flag", action="store_true", help="Restore all indexed items")
+    p_restore.add_argument("-y", "--yes", action="store_true", help="Overwrite existing files without asking")
 
     # prune
     subparsers.add_parser("prune", help="Remove non-existent paths from the index")
@@ -140,7 +141,7 @@ def main():
     elif args.command == "backup":
         backup(engine, args.paths, all_flag=args.all_flag)
     elif args.command == "restore":
-        restore(engine, args.paths, all_flag=args.all_flag)
+        restore(engine, args.paths, all_flag=args.all_flag, yes_flag=args.yes)
     elif args.command == "prune":
         prune(engine)
     elif args.command == "show":

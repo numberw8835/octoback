@@ -68,7 +68,7 @@ octoback restore ~/.zshrc          # bring a file back from the Vault
 | `remove <paths>` | Stop tracking paths (the Vault is not touched) |
 | `check <paths>` | Verify paths still match their tracked hash (always reads the full contents) |
 | `backup [<paths>] [--all]` | Copy items into the Vault |
-| `restore [<paths>] [--all]` | Copy items back from the Vault |
+| `restore [<paths>] [--all] [-y]` | Copy items back from the Vault (asks before overwriting files that differ) |
 | `prune` | Drop paths that no longer exist from the index |
 | `show` | List tracked paths |
 | `show history [-n N]` | Show the last N lifecycle events (`0` for all) |
