@@ -48,13 +48,8 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
     tracker = DualProgressBar(total_bytes=total_bytes)
 
     def process(p: str):
-        try:
-            size = os.path.getsize(p) if os.path.isfile(p) else 0
-        except OSError:
-            size = 0
-        tracker.start_file(os.path.basename(p), size)
-        engine.update_path_in_index(p)
-        tracker.update(size)
+        # The engine moves the bars: while hashing, or by skipping paths that didn't change
+        engine.update_path_in_index(p, tracker=tracker)
 
     for path in targets:
         if os.path.isdir(path) and granular:

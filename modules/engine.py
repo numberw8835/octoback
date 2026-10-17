@@ -152,7 +152,7 @@ class Engine:
         else:
             logger.warning("Path not found in index: %s", path)
 
-    def update_path_in_index(self, path: str):
+    def update_path_in_index(self, path: str, tracker=None):
         """checks if a path is new, moved, or copied"""
         if not os.path.exists(path):
             if path in self.index:
@@ -169,10 +169,15 @@ class Engine:
         # Fast path: same sizes and modification times as last time, no need to read the contents
         signature = get_quick_signature(path)
         if signature and path in self.index and self.index[path].get("signature") == signature:
+            if tracker:
+                tracker.skip_file(os.path.basename(path), self.index[path].get("size", 0))
             logger.info("No change done: %s", path)
             return "unchanged"
 
-        current_hash = get_dir_hash_optimized(path) if is_dir else get_file_hash_optimized(path)
+        if is_dir:
+            current_hash = get_dir_hash_optimized(path, tracker=tracker)
+        else:
+            current_hash = get_file_hash_optimized(path, tracker=tracker)
         if not current_hash:
             return
 

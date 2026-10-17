@@ -16,7 +16,9 @@ from modules.commands.update import update
 from modules.commands.vault import clean_vault
 from modules.commands.zip import zip_vault
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+# In a terminal, clear the progress bar line first so log messages don't get glued to it
+clear_line = "\r\033[K" if sys.stderr.isatty() else ""
+logging.basicConfig(level=logging.INFO, format=f"{clear_line}%(levelname)s: %(message)s")
 
 
 def build_parser() -> argparse.ArgumentParser:

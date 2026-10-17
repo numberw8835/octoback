@@ -62,22 +62,30 @@ class DualProgressBar:
         self.sys.stdout.write(line)
         self.sys.stdout.flush()
 
-    def start_file(self, filename: str, file_size: int):
-        # Truncate long filenames to 25 characters (e.g., "Very_Long_Filename...mp3")
+    def shorten_filename(self, filename: str) -> str:
+        """Truncate long filenames to 25 characters (e.g., "Very_Long_Filename...mp3")"""
         max_name_len = 25
-        if len(filename) > max_name_len:
-            name, ext = os.path.splitext(filename)
-            available = max_name_len - len(ext) - 3
-            if available > 0:
-                self.current_file = f"{name[:available]}...{ext}"
-            else:
-                self.current_file = f"{filename[:max_name_len - 3]}..."
-        else:
-            self.current_file = filename
+        if len(filename) <= max_name_len:
+            return filename
+        name, ext = os.path.splitext(filename)
+        available = max_name_len - len(ext) - 3
+        if available > 0:
+            return f"{name[:available]}...{ext}"
+        return f"{filename[:max_name_len - 3]}..."
 
+    def start_file(self, filename: str, file_size: int):
+        self.current_file = self.shorten_filename(filename)
         self.current_file_total = max(file_size, 1)
         self.current_file_bytes = 0
         self.files_copied_count += 1
+        self.render()
+
+    def skip_file(self, filename: str, file_size: int):
+        """Count a file or folder that was already up to date, so the total bar still moves."""
+        self.current_file = self.shorten_filename(filename)
+        self.current_file_total = max(file_size, 1)
+        self.current_file_bytes = file_size
+        self.copied_total_bytes += file_size
         self.render()
 
     def update(self, chunk_bytes: int):
@@ -151,6 +159,8 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
             if src_stat.st_size == dst_stat.st_size:
                 # Copies keep the source modification time, so a match means nothing changed
                 if src_stat.st_mtime_ns == dst_stat.st_mtime_ns:
+                    if tracker:
+                        tracker.skip_file(os.path.basename(source), src_stat.st_size)
                     return True
 
                 # Times differ (e.g. a drive with coarse timestamps): verify content hash
@@ -160,6 +170,8 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
                 dst_hash = get_file_hash_optimized(dest_file)
                 if src_hash and src_hash == dst_hash:
                     shutil.copystat(source, dest_file)  # Sync the time so next run takes the fast path
+                    if tracker:
+                        tracker.skip_file(os.path.basename(source), src_stat.st_size)
                     return True  # Identical, skip copying!
 
         # Need to copy: ensure parent directory exists
