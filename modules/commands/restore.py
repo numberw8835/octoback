@@ -1,8 +1,9 @@
 import logging
 import os
+import time
 from typing import List
 from modules.engine import Engine
-from ..utils import DualProgressBar, copy_to
+from ..utils import DualProgressBar, copy_to, count_part, format_size, format_summary, paint, short_path
 
 logger = logging.getLogger("octoback.restore")
 
@@ -42,6 +43,8 @@ def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_f
         logger.warning("No targets specified for restore.")
         return False
 
+    start_time = time.monotonic()
+
     # Step 2: Build pairs of (vault_source, destination_target) using mirrored paths
     restore_pairs = []
     for original_path in targets:
@@ -51,13 +54,13 @@ def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_f
         vault_path = os.path.join(engine.vault_path, rel_path)
 
         if not os.path.exists(vault_path):
-            logger.warning("Item not found in vault: %s", vault_path)
+            logger.warning("Not in the Vault, skipped: %s", short_path(original_path))
             continue
 
         restore_pairs.append((vault_path, original_path))
 
     if not restore_pairs:
-        logger.warning("No valid items found in vault to restore.")
+        logger.warning("Nothing to restore: none of these are in the Vault.")
         return False
 
     # Step 3: Ask before replacing any of your existing files that differ from the Vault copy
@@ -66,11 +69,11 @@ def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_f
         overwritten += find_files_to_overwrite(vault_path, dest_path)
 
     if overwritten and not yes_flag:
-        print(f"\nRestoring will overwrite {len(overwritten)} existing file(s) that differ from the Vault:")
+        print(f"{paint('⚠', 'yellow')} Restoring will overwrite {len(overwritten)} existing file(s) that differ from the Vault:")
         for path in overwritten[:20]:
-            print(f"  - {path}")
+            print(f"    {short_path(path)}")
         if len(overwritten) > 20:
-            print(f"  ... and {len(overwritten) - 20} more")
+            print(paint(f"    ... and {len(overwritten) - 20} more", "dim"))
         confirm = input("\nDo you want to overwrite them with the Vault copies? (yes/no): ").strip().lower()
         if confirm not in ("y", "yes"):
             print("Restore aborted. Nothing was changed.")
@@ -103,12 +106,14 @@ def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_f
         if not copy_to(vault_path, dest_path, tracker=tracker):
             failed.append(dest_path)
 
-    # Step 7: Print a final newline after finishing all files
+    # Step 7: Clear the progress bar
     tracker.finish()
 
-    # Step 8: Report items that were not fully restored
-    if failed:
-        logger.warning("%d item(s) were not fully restored:", len(failed))
-        for path in failed:
-            logger.warning("  - %s", path)
+    # Step 8: List items that were not fully restored, then the summary
+    for path in failed:
+        logger.warning("Not fully restored: %s", short_path(path))
+    restored = tracker.copied_count
+    parts = [count_part(restored, "restored") + (f" ({format_size(tracker.read_bytes)})" if restored else ""),
+             count_part(tracker.skipped_count, "unchanged"), count_part(len(failed), "failed")]
+    print(format_summary("Restore done", parts, time.monotonic() - start_time, not failed))
     return not failed

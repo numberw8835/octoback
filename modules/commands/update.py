@@ -1,8 +1,10 @@
 import logging
 import os
+import time
+from collections import Counter
 from typing import List
 from ..engine import Engine
-from ..utils import DualProgressBar, get_file_hash_optimized
+from ..utils import DualProgressBar, count_part, format_summary, get_file_hash_optimized
 
 logger = logging.getLogger("octoback.update")
 
@@ -32,6 +34,8 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
         logger.warning("No paths provided to update.")
         return False
 
+    start_time = time.monotonic()
+
     # Calculate total bytes of existing targets
     total_bytes = 0
     for path in targets:
@@ -47,12 +51,11 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
 
     tracker = DualProgressBar(total_bytes=total_bytes)
 
-    failed = []
+    results = Counter()
 
     def process(p: str):
         # The engine moves the bars: while hashing, or by skipping paths that didn't change
-        if engine.update_path_in_index(p, tracker=tracker) is None:
-            failed.append(p)
+        results[engine.update_path_in_index(p, tracker=tracker) or "failed"] += 1
 
     for path in targets:
         if os.path.isdir(path) and granular:
@@ -75,4 +78,8 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
                 process(path)  # Recorded as "deleted"
 
     tracker.finish()
-    return engine.save_index() and not failed
+    ok = engine.save_index() and not results["failed"]
+    parts = [count_part(results[action], action) for action in
+             ("new", "modified", "moved", "copied", "deleted", "unchanged", "skipped", "failed")]
+    print(format_summary("Update done", parts, time.monotonic() - start_time, ok))
+    return ok

@@ -2,8 +2,9 @@ import logging
 import os
 import shutil
 import tarfile
+import time
 from modules.engine import Engine
-from ..utils import DualProgressBar, ProgressReader, sorted_dirs_and_files
+from ..utils import DualProgressBar, ProgressReader, format_size, format_summary, paint, short_path, sorted_dirs_and_files
 
 logger = logging.getLogger("octoback.zip")
 
@@ -28,7 +29,7 @@ def zip_vault(engine: Engine) -> bool:
     """
     vault_path = engine.vault_path
     if not os.path.exists(vault_path):
-        logger.error("Vault directory does not exist: %s", vault_path)
+        logger.error("Vault not found: %s", short_path(vault_path))
         return False
 
     archive_path = f"{vault_path}.tar.xz"
@@ -45,9 +46,10 @@ def zip_vault(engine: Engine) -> bool:
                 pass
 
     tracker = DualProgressBar(total_bytes=total_bytes)
+    start_time = time.monotonic()
 
     try:
-        logger.info("Compressing vault in-place: %s -> %s", vault_path, archive_path)
+        logger.info(paint(f"Compressing {short_path(vault_path)} into {os.path.basename(archive_path)} ...", "dim"))
         # Archive vault contents one entry at a time so the progress bar can follow
         with tarfile.open(tmp_archive, "w:xz", preset=9) as tar:
             for root, dirs, files in sorted_dirs_and_files(os.walk(vault_path)):
@@ -65,11 +67,12 @@ def zip_vault(engine: Engine) -> bool:
 
         # Remove the uncompressed vault directory
         shutil.rmtree(vault_path)
-        logger.info("Vault compressed successfully into %s", archive_path)
+        sizes = f"{format_size(total_bytes)} → {format_size(os.path.getsize(archive_path))}"
+        print(format_summary("Vault compressed", [sizes], time.monotonic() - start_time))
         return True
 
     except Exception as e:
-        logger.error("Failed to compress vault in-place: %s", e)
+        logger.error("Could not compress the Vault: %s", e)
         if os.path.exists(tmp_archive):
             try:
                 os.remove(tmp_archive)

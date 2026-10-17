@@ -58,6 +58,22 @@ octoback update --all              # later: detect what changed
 octoback restore ~/.zshrc          # bring a file back from the Vault
 ```
 
+## What it looks like
+
+```
+$ octoback update --all
+✓ Modified   ~/Documents
+· Unchanged  ~/Projects
+✓ Moved      ~/.zshrc.old  (from ~/.zshrc)
+✓ Update done · 1 modified · 1 moved · 1 unchanged · 0s
+
+$ octoback backup --all
+━━━━━━━━━━━━━━━━──── 83%  1.4 GB / 1.7 GB  120 MB/s  ETA 2s  f6.bin 40%
+✓ Backup done · 2 copied (1.7 GB) · 1 unchanged · 14s
+```
+
+Colours turn off automatically when the output goes to a file or a pipe, or when `NO_COLOR` is set.
+
 ## Commands
 
 | Command | What it does |
@@ -90,9 +106,10 @@ The **index** stores a BLAKE3 hash, type and size for each tracked path, plus a 
 The **history** records every lifecycle event:
 
 ```
-[2026-10-16 21:07:21] [MOVED    ] ~/docs/a.txt -> ~/docs/a2.txt
-[2026-10-16 21:07:22] [UNTRACKED] ~/proj
-[2026-10-16 21:07:23] [DELETED  ] ~/thesis
+History (last 3 of 3)
+  2026-10-16 21:07:21  ✓ Moved      ~/docs/a2.txt  (from ~/docs/a.txt)
+  2026-10-16 21:07:22  ✓ Untracked  ~/proj
+  2026-10-16 21:07:23  ✓ Deleted    ~/thesis
 ```
 
 `vault clean` uses this history carefully. It only removes backups of paths you **untracked** yourself, and old copies of **moved** files once the new location is backed up. Backups of **deleted** files are always kept, since the Vault may hold the only copy.

@@ -1,5 +1,4 @@
 import argparse
-import logging
 import os
 import sys
 import time
@@ -16,10 +15,9 @@ from modules.commands.unzip import unzip_vault
 from modules.commands.update import update
 from modules.commands.vault import clean_vault
 from modules.commands.zip import zip_vault
+from modules.utils.style import format_header, paint, setup_logging, short_path
 
-# In a terminal, clear the progress bar line first so log messages don't get glued to it
-clear_line = "\r\033[K" if sys.stderr.isatty() else ""
-logging.basicConfig(level=logging.INFO, format=f"{clear_line}%(levelname)s: %(message)s")
+setup_logging()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -102,15 +100,15 @@ def wait_for_vault(vault_path: str) -> None:
     """Waits until the Vault shows up, e.g. when it lives on a drive that isn't plugged in yet."""
     if is_vault_available(vault_path):
         return
-    print(f"Waiting for the Vault at {vault_path} ...")
-    print("Plug in the drive (or run `octoback init` to create it). Press Ctrl+C to cancel.")
+    print(f"{paint('⚠', 'yellow')} Waiting for the Vault at {short_path(vault_path)} ...")
+    print(paint("  Plug in the drive (or run `octoback init` to create it). Press Ctrl+C to cancel.", "dim"))
     try:
         while not is_vault_available(vault_path):
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nCancelled.")
+        print(f"\n{paint('✗', 'red')} Cancelled.")
         sys.exit(1)
-    print("Vault found, continuing.")
+    print(f"{paint('✓', 'green')} Vault found, continuing.")
 
 
 def main():
@@ -118,6 +116,7 @@ def main():
     args = parser.parse_args()
 
     if not args.command:
+        print(format_header() + "\n")
         parser.print_help()
         sys.exit(0)
 
@@ -125,17 +124,20 @@ def main():
 
     if args.command == "init":
         engine.init()
-        print("Octoback initialized successfully.")
+        print(format_header())
+        print(f"{paint('✓', 'green')} Initialized")
+        print(paint(f"  Vault: {short_path(engine.vault_path)}", "dim"))
+        print(paint(f"  Index: {short_path(engine.index_path)}", "dim"))
         return
 
     # Stop if the index is missing or could not be loaded
     if not engine._loaded:
         if os.path.exists(engine.index_path):
-            print(f"Error: The index file is corrupted: {engine.index_path}")
-            print("Fix it by hand, or delete it and run `octoback init` (this resets tracking).")
+            print(f"{paint('✗', 'red')} The index file is corrupted: {short_path(engine.index_path)}")
+            print(paint("  Fix it by hand, or delete it and run `octoback init` (this resets tracking).", "dim"))
         else:
-            print("Error: Octoback has not been initialized yet.")
-            print("Please run `octoback init` first.")
+            print(f"{paint('✗', 'red')} Octoback has not been initialized yet.")
+            print(paint("  Run `octoback init` first.", "dim"))
         sys.exit(1)
 
     # Normalize input paths to absolute paths directly at the CLI level
@@ -151,8 +153,8 @@ def main():
     # Check if Vault is currently compressed
     compressed_vault = f"{engine.vault_path}.tar.xz"
     if args.command in ("backup", "restore", "vault") and os.path.exists(compressed_vault):
-        print("Error: The Vault is currently compressed (Vault.tar.xz).")
-        print(f"Please run `octoback unzip` first before running {args.command}.")
+        print(f"{paint('✗', 'red')} The Vault is currently compressed (Vault.tar.xz).")
+        print(paint(f"  Run `octoback unzip` first before running {args.command}.", "dim"))
         sys.exit(1)
 
     # Every command returns False when something failed, so scripts and cron can tell (exit code 1)

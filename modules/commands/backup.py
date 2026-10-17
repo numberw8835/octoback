@@ -1,8 +1,9 @@
 import logging
 import os
+import time
 from typing import List
 from modules.engine import Engine
-from ..utils import DualProgressBar, copy_to
+from ..utils import DualProgressBar, copy_to, count_part, format_size, format_summary, short_path
 
 logger = logging.getLogger("octoback.backup")
 
@@ -17,6 +18,8 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False) -> bool:
     if not targets:
         logger.warning("No targets specified for backup.")
         return False
+
+    start_time = time.monotonic()
 
     # Step 2: Calculate total bytes for the entire backup
     total_bytes = 0
@@ -42,7 +45,7 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False) -> bool:
     failed = []
     for path in targets:
         if not os.path.exists(path):
-            logger.warning("Target does not exist: %s", path)
+            logger.warning("Not found, skipped: %s", short_path(path))
             continue
 
         # Strip leading '/' so os.path.join preserves engine.vault_path:
@@ -53,12 +56,14 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False) -> bool:
         if not copy_to(source=path, destination=dest_vault_path, tracker=tracker):
             failed.append(path)
 
-    # Step 6: Print a final newline after finishing all files
+    # Step 6: Clear the progress bar
     tracker.finish()
 
-    # Step 7: Report items that were not fully backed up
-    if failed:
-        logger.warning("%d item(s) were not fully backed up:", len(failed))
-        for path in failed:
-            logger.warning("  - %s", path)
+    # Step 7: List items that were not fully backed up, then the summary
+    for path in failed:
+        logger.warning("Not fully backed up: %s", short_path(path))
+    copied = tracker.copied_count
+    parts = [count_part(copied, "copied") + (f" ({format_size(tracker.read_bytes)})" if copied else ""),
+             count_part(tracker.skipped_count, "unchanged"), count_part(len(failed), "failed")]
+    print(format_summary("Backup done", parts, time.monotonic() - start_time, not failed))
     return not failed

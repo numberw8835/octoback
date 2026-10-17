@@ -1,7 +1,13 @@
+import logging
 import os
 import shutil
+import sys
 import tempfile
+import time
 from blake3 import blake3
+from .style import format_duration, format_size, paint, short_path
+
+logger = logging.getLogger("octoback.utils")
 
 # BLAKE3 hash of no data at all (an empty file or an empty folder)
 EMPTY_HASH = blake3().hexdigest()
@@ -19,7 +25,7 @@ def get_file_hash_optimized(file_path: str, tracker: "DualProgressBar | None" = 
                     tracker.update(len(chunk))
         return file_hash.hexdigest()
     except OSError as e:
-        print(f"Error reading file {file_path}: {e}")
+        logger.error("Could not read %s: %s", short_path(file_path), e.strerror or e)
         return ""
 
 def get_quick_signature(path: str) -> str:
@@ -43,24 +49,26 @@ def get_quick_signature(path: str) -> str:
         return ""  # Unknown signature: never matches, so the path gets hashed
 
 class DualProgressBar:
-    """Renders dual progress: [total: ▮▮▮ 2% | file_name : ▮▮▮▮▮▮ 24%]"""
-    def __init__(self, total_bytes: int, bar_length: int = 15):
-        import sys
-        self.sys = sys
+    """Renders one line: ━━━━━━━━━━────────── 48%  2.1 GB / 4.4 GB  120 MB/s  ETA 19s  big.bin 70%"""
+    def __init__(self, total_bytes: int, bar_length: int = 20):
         self.total_bytes = max(total_bytes, 1)
-        self.copied_total_bytes = 0
+        self.copied_total_bytes = 0  # Done so far, including files skipped as up to date
+        self.read_bytes = 0          # Actually read from disk, used for the speed
         self.bar_length = bar_length
         self.current_file = ""
         self.current_file_bytes = 0
         self.current_file_total = 1
-        self.files_copied_count = 0
+        self.files_copied_count = 0  # Files started (hashed, copied or extracted)
+        self.copied_count = 0        # Files copied successfully, for backup/restore summaries
+        self.skipped_count = 0
+        self.start_time = time.monotonic()
+        self.last_render = 0.0
+        self.enabled = sys.stdout.isatty()  # No bar when output goes to a file or a pipe
 
-    def scanning(self, item_name: str = ""):
-        """Display scanning message when checking differences."""
-        desc = f"Scanning: {item_name[:20]}" if item_name else "Scanning..."
-        line = f"\r\033[K[{desc}]"
-        self.sys.stdout.write(line)
-        self.sys.stdout.flush()
+    def scanning(self, item_name: str):
+        """Shows which file is being compared (same size, different modification time)."""
+        self.current_file = f"comparing {self.shorten_filename(item_name)}"
+        self.render()
 
     def shorten_filename(self, filename: str) -> str:
         """Truncate long filenames to 25 characters (e.g., "Very_Long_Filename...mp3")"""
@@ -86,16 +94,19 @@ class DualProgressBar:
         self.current_file_total = max(file_size, 1)
         self.current_file_bytes = file_size
         self.copied_total_bytes += file_size
+        self.skipped_count += 1
         self.render()
 
     def update(self, chunk_bytes: int):
         self.copied_total_bytes += chunk_bytes
         self.current_file_bytes += chunk_bytes
+        self.read_bytes += chunk_bytes
         self.render()
 
     def update_total(self, chunk_bytes: int):
         """Advance only the total bar (when total and file are measured differently, e.g. unzip)."""
         self.copied_total_bytes += chunk_bytes
+        self.read_bytes += chunk_bytes
         self.render()
 
     def update_file(self, chunk_bytes: int):
@@ -104,26 +115,35 @@ class DualProgressBar:
         self.render()
 
     def render(self):
-        total_pct = min(100, int((self.copied_total_bytes / self.total_bytes) * 100))
-        file_pct = min(100, int((self.current_file_bytes / self.current_file_total) * 100))
+        # Redraw at most 10 times a second, so thousands of small files don't flood the terminal
+        now = time.monotonic()
+        if not self.enabled or now - self.last_render < 0.1:
+            return
+        self.last_render = now
 
-        total_filled = int(self.bar_length * total_pct // 100)
-        file_filled = int(self.bar_length * file_pct // 100)
+        total_pct = min(100, self.copied_total_bytes * 100 // self.total_bytes)
+        file_pct = min(100, self.current_file_bytes * 100 // self.current_file_total)
+        filled = self.bar_length * total_pct // 100
+        bar = paint("━" * filled, "teal") + paint("─" * (self.bar_length - filled), "dim")
 
-        total_bar = "▮" * total_filled + " " * (self.bar_length - total_filled)
-        file_bar = "▮" * file_filled + " " * (self.bar_length - file_filled)
+        done = min(self.copied_total_bytes, self.total_bytes)
+        text = f" {total_pct:>3}%  {format_size(done)} / {format_size(self.total_bytes)}"
+        elapsed = now - self.start_time
+        if elapsed > 1 and self.read_bytes:
+            speed = self.read_bytes / elapsed
+            text += f"  {format_size(speed)}/s  ETA {format_duration((self.total_bytes - done) / speed)}"
+        text += f"  {self.current_file} {file_pct}%"
 
-        # \r moves cursor to column 0; \033[K clears from cursor to end of screen line
-        line = f"\r\033[K[total: {total_bar} {total_pct:>3}% | {self.current_file} : {file_bar} {file_pct:>3}%]"
-        self.sys.stdout.write(line)
-        self.sys.stdout.flush()
+        # Keep it on one line: cut the text to the terminal width
+        width = shutil.get_terminal_size().columns - self.bar_length - 1
+        sys.stdout.write(f"\r\033[K{bar}{text[:width]}")
+        sys.stdout.flush()
 
     def finish(self):
-        if self.files_copied_count == 0:
-            self.sys.stdout.write("\r\033[K[OK!] All files are already up to date.\n")
-        else:
-            self.sys.stdout.write("\n")
-        self.sys.stdout.flush()
+        """Clears the bar, so the command's summary line can take its place."""
+        if self.enabled:
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
 
 class ProgressReader:
     """Wraps an open file and reports the size of every read to on_read (e.g. tracker.update)."""
@@ -200,10 +220,12 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
         shutil.copystat(source, tmp_dest)
         os.replace(tmp_dest, dest_file)
         sync_folder(parent_dir)
+        if tracker:
+            tracker.copied_count += 1
         return True
 
     except OSError as e:
-        print(f"Error copying file {source} to {destination}: {e}")
+        logger.error("Could not copy %s: %s", short_path(source), e.strerror or e)
         if tmp_dest and os.path.exists(tmp_dest):
             try:
                 os.remove(tmp_dest)
@@ -241,13 +263,13 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
 
         return all_copied
     except OSError as e:
-        print(f"Error copying directory {source} to {destination}: {e}")
+        logger.error("Could not copy %s: %s", short_path(source), e.strerror or e)
         return False
 
 def copy_to(source: str, destination: str, tracker: DualProgressBar | None = None) -> bool:
     """Checks if source is a file or dir, checks hashes, and copies files in 64MB chunks."""
     if not os.path.exists(source):
-        print(f"Source not found: {source}")
+        logger.error("Not found: %s", short_path(source))
         return False
 
     if os.path.isfile(source):
@@ -255,13 +277,13 @@ def copy_to(source: str, destination: str, tracker: DualProgressBar | None = Non
     elif os.path.isdir(source):
         return copy_dir_to(source, destination, tracker=tracker)
     else:
-        print(f"Unsupported source type: {source}")
+        logger.error("Not a file or folder: %s", short_path(source))
         return False
 
 def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = None) -> str:
     """returns a stable hexdigest of a directory's structure and contents"""
     if not os.path.isdir(dir_path):
-        print(f"Directory not found: {dir_path}")
+        logger.error("Folder not found: %s", short_path(dir_path))
         return ""
     dir_hash = blake3()
     try:
@@ -282,7 +304,7 @@ def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = No
                 dir_hash.update(os.fsencode(f"{rel}\0{file_hash}\n"))
         return dir_hash.hexdigest()
     except OSError as e:
-        print(f"Error accessing directory {dir_path}: {e}")
+        logger.error("Could not read %s: %s", short_path(dir_path), e.strerror or e)
         return ""
 
 def get_mount_point(path: str) -> str:

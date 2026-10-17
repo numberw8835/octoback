@@ -3,6 +3,7 @@ import os
 import time
 import logging
 from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_mount_point, get_quick_signature, sync_folder
+from .utils.style import format_action, short_path
 from .config import CONFIG_FILE, load_config, create_default_config
 
 logger = logging.getLogger("octoback.engine")
@@ -46,19 +47,19 @@ class Engine:
                 if isinstance(data, dict):
                     self.index = data
                 else:
-                    logger.error("Index file does not contain a JSON object: %s", target)
+                    logger.debug("Index file does not contain a JSON object: %s", target)
                     return
                 self._loaded = True
-                logger.info("Data loaded successfully!")
+                logger.debug("Index loaded: %s", target)
         except FileNotFoundError:
-            logger.error("File not found: %s", target)
+            logger.debug("Index file not found: %s", target)
         except json.JSONDecodeError:
-            logger.error("Invalid JSON in file: %s", target)
+            logger.debug("Invalid JSON in index file: %s", target)
 
     def save_index(self, path: str | None = None) -> bool:
         """save the index to file atomically."""
         if not self._loaded:
-            logger.info("Index not loaded, cannot save!")
+            logger.error("Index not loaded, cannot save")
             return False
         target = path or self.index_path
         tmp_path = f"{target}.tmp"
@@ -70,10 +71,10 @@ class Engine:
                 os.fsync(f.fileno())
             os.replace(tmp_path, target)
             sync_folder(os.path.dirname(target))
-            logger.info("Data saved to: %s", target)
+            logger.debug("Index saved: %s", target)
             return True
         except OSError as e:
-            logger.error("Error saving index to file: %s", e)
+            logger.error("Could not save the index: %s", e.strerror or e)
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -87,7 +88,7 @@ class Engine:
         path_hash / signature: pass them when already computed, so the files aren't read twice
         """
         if not os.path.exists(path):
-            logger.error("Path does not exist: %s", path)
+            logger.error("Not found: %s", short_path(path))
             return False
 
         is_hidden = os.path.basename(path).startswith(".")
@@ -97,11 +98,11 @@ class Engine:
         if os.path.isdir(path):
             dir_hash = path_hash or get_dir_hash_optimized(path, tracker=tracker)
             if not dir_hash:
-                logger.error("Failed to hash directory: %s", path)
+                logger.error("Could not hash %s", short_path(path))
                 return False
             if path in self.index and self.index[path].get("hash") == dir_hash:
                 self.index[path]["signature"] = signature
-                logger.info("No change done!")
+                logger.debug("Unchanged: %s", path)
                 return True
             self.index[path] = {
                 "type": "dir",
@@ -114,11 +115,11 @@ class Engine:
         elif os.path.isfile(path):
             file_hash = path_hash or get_file_hash_optimized(path, tracker=tracker)
             if not file_hash:
-                logger.error("Failed to hash file: %s", path)
+                logger.error("Could not hash %s", short_path(path))
                 return False
             if path in self.index and self.index[path].get("hash") == file_hash:
                 self.index[path]["signature"] = signature
-                logger.info("No change done!")
+                logger.debug("Unchanged: %s", path)
                 return True
             ext = os.path.splitext(path)[1].lstrip(".") or None
             self.index[path] = {
@@ -131,7 +132,7 @@ class Engine:
                 "mount": get_mount_point(path)
             }
         else:
-            logger.error("Unknown object type: %s", path)
+            logger.error("Not a file or folder: %s", short_path(path))
             return False
         return True
 
@@ -157,9 +158,9 @@ class Engine:
         if path in self.index:
             del self.index[path]
             self._record_history(action, path)
-            logger.info("Removed path: %s", path)
+            logger.info(format_action(action, path))
             return True
-        logger.warning("Path not found in index: %s", path)
+        logger.warning("Not tracked: %s", short_path(path))
         return False
 
     def is_on_unplugged_drive(self, path: str) -> bool:
@@ -171,14 +172,14 @@ class Engine:
         """checks if a path is new, moved, or copied"""
         if not os.path.exists(path):
             if self.is_on_unplugged_drive(path):
-                logger.warning("Skipped (drive not plugged in): %s", path)
+                logger.info(format_action("skipped", path, "drive not plugged in"))
                 return "skipped"
             if path in self.index:
                 del self.index[path]
                 self._record_history("deleted", path)
-                logger.info("Deleted: %s", path)
+                logger.info(format_action("deleted", path))
                 return "deleted"
-            logger.error("Path does not exist: %s", path)
+            logger.error("Not found: %s", short_path(path))
             return
 
         is_dir = os.path.isdir(path)
@@ -193,7 +194,7 @@ class Engine:
         if signature and path in self.index and self.index[path].get("signature") == signature:
             if tracker:
                 tracker.skip_file(os.path.basename(path), self.index[path].get("size", 0))
-            logger.info("No change done: %s", path)
+            logger.info(format_action("unchanged", path))
             return "unchanged"
 
         if is_dir:
@@ -208,12 +209,12 @@ class Engine:
             if self.index[path].get("hash") == current_hash:
                 # Touched but not changed: remember the new signature so it isn't hashed again
                 self.index[path]["signature"] = signature
-                logger.info("No change done: %s", path)
+                logger.info(format_action("unchanged", path))
                 return "unchanged"
             else:
                 self.add_path_to_index(path, path_hash=current_hash, signature=signature)
                 self._record_history("modified", path)
-                logger.info("Modified: %s", path)
+                logger.info(format_action("modified", path))
                 return "modified"
 
         # Path is not in index: check if a missing entry was moved here (ignoring empty files)
@@ -226,7 +227,7 @@ class Engine:
                 for old_p in missing_matches:
                     del self.index[old_p]
                     self._record_history("moved", path, old_p)
-                    logger.info("Moved: %s -> %s", old_p, path)
+                    logger.info(format_action("moved", path, f"from {short_path(old_p)}"))
                 self.add_path_to_index(path, path_hash=current_hash, signature=signature)
                 return "moved"
 
@@ -239,11 +240,12 @@ class Engine:
             if copied_matches:
                 self.add_path_to_index(path, path_hash=current_hash, signature=signature)
                 self._record_history("copied", path, copied_matches[0])
-                logger.info("Copied: %s is copy of %s", path, copied_matches[0])
+                logger.info(format_action("copied", path, f"copy of {short_path(copied_matches[0])}"))
                 return "copied"
 
         self.add_path_to_index(path, path_hash=current_hash, signature=signature)
         self._record_history("new", path)
+        logger.info(format_action("new", path))
         return "new"
 
     def _calculate_path_size(self, path: str):
@@ -261,5 +263,5 @@ class Engine:
                         continue
             return total_size
         except OSError as e:
-            logger.error("Error calculating size for %s: %s", path, e)
+            logger.error("Could not measure %s: %s", short_path(path), e.strerror or e)
             return 0

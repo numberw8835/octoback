@@ -1,30 +1,28 @@
+import json
 import logging
+import os
 from modules.engine import Engine
+from ..utils import format_action, format_size, paint, short_path
 
 logger = logging.getLogger("octoback.show")
 
 
 def show(engine: Engine) -> None:
-    """Display all tracked paths and their index info."""
+    """Display all tracked paths as aligned columns: type, size, hash, path."""
     if not engine.index:
-        print("Index is empty. No paths currently tracked.")
+        print("Nothing is tracked yet. Start with: octoback add <paths>")
         return
 
-    print(f"\nTracked Paths ({len(engine.index)} items):")
-    print("-" * 70)
+    print(paint(f"Tracked ({len(engine.index)})", "bold"))
     for path, meta in engine.index.items():
-        obj_type = meta.get("type", "unknown")
-        size = meta.get("size", "0")
+        obj_type = meta.get("type", "?")
+        size = format_size(meta.get("size", 0))
         hash_val = meta.get("hash", "")[:8]
-        print(f"[{obj_type:<4}] {path} ({size} bytes, hash: {hash_val}...)")
-    print("-" * 70)
+        print(f"  {obj_type:<4}  {size:>9}  {paint(hash_val, 'dim')}  {short_path(path)}")
 
 
 def show_history(engine: Engine, limit: int = 20) -> None:
-    """Display recorded lifecycle history of tracked paths."""
-    import json
-    import os
-
+    """Display recorded lifecycle history of tracked paths, coloured by action."""
     if not os.path.exists(engine.history_path):
         print("No history recorded yet.")
         return
@@ -47,20 +45,17 @@ def show_history(engine: Engine, limit: int = 20) -> None:
     total = len(entries)
     display_entries = entries[-limit:] if limit > 0 else entries
 
-    print(f"\nOctoback History (showing {len(display_entries)} of {total} event(s)):")
-    print("-" * 75)
+    print(paint(f"History (last {len(display_entries)} of {total})", "bold"))
     for entry in display_entries:
-        timestamp = entry.get("time", "Unknown time")
-        action = entry.get("action", "").upper().ljust(9)
-        path = entry.get("path", "")
+        timestamp = entry.get("time", "unknown time")
+        action = entry.get("action", "")
         origin = entry.get("origin")
 
-        if origin and action.strip() == "MOVED":
-            details = f"{origin} -> {path}"
-        elif origin and action.strip() == "COPIED":
-            details = f"{path} (copy of {origin})"
+        if origin and action == "moved":
+            note = f"from {short_path(origin)}"
+        elif origin and action == "copied":
+            note = f"copy of {short_path(origin)}"
         else:
-            details = path
+            note = ""
 
-        print(f"[{timestamp}] [{action}] {details}")
-    print("-" * 75)
+        print(f"  {paint(timestamp, 'dim')}  {format_action(action, entry.get('path', ''), note)}")

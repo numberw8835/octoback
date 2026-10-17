@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 from ..engine import Engine
+from ..utils import paint, short_path
 
 logger = logging.getLogger("octoback.clear")
 
@@ -13,8 +14,8 @@ def clear_index(engine: Engine, yes_flag: bool = False) -> bool:
         logger.info("Index is already empty.")
         return True
 
-    print(f"Warning: This will remove all {total} tracked item(s) from the index.")
-    print("The Vault will NOT be touched.")
+    print(f"{paint('⚠', 'yellow')} This will remove all {total} tracked item(s) from the index.")
+    print(paint("  The Vault will NOT be touched.", "dim"))
 
     if not yes_flag:
         confirm = input("Are you sure you want to clear the entire index? (yes/no): ").strip().lower()
@@ -23,7 +24,7 @@ def clear_index(engine: Engine, yes_flag: bool = False) -> bool:
             return False
 
     engine.index.clear()
-    logger.info("Cleared %d item(s) from index. Index is now empty.", total)
+    logger.info(f"{paint('✓', 'green')} Cleared {total} item(s) from the index.")
     return engine.save_index()
 
 
@@ -36,8 +37,8 @@ def clear_vault(engine: Engine, yes_flag: bool = False) -> bool:
         logger.info("Vault is already empty.")
         return True
 
-    print(f"Warning: This will permanently delete ALL backup files in the Vault ({engine.vault_path}).")
-    print("Your PC files and tracking index will NOT be touched.")
+    print(f"{paint('⚠', 'yellow')} This will permanently delete ALL backups in the Vault ({short_path(engine.vault_path)}).")
+    print(paint("  Your files and the tracking index will NOT be touched.", "dim"))
 
     if not yes_flag:
         confirm = input("Are you sure you want to permanently clear the Vault? (yes/no): ").strip().lower()
@@ -57,7 +58,7 @@ def clear_vault(engine: Engine, yes_flag: bool = False) -> bool:
                     os.remove(item_path)
                 count += 1
             except OSError as e:
-                logger.error("Failed to remove %s from Vault: %s", item_path, e)
+                logger.error("Could not remove %s: %s", short_path(item_path), e.strerror or e)
                 ok = False
 
     # Also remove compressed archive if present
@@ -66,8 +67,8 @@ def clear_vault(engine: Engine, yes_flag: bool = False) -> bool:
             os.remove(compressed_vault)
             count += 1
         except OSError as e:
-            logger.error("Failed to remove %s: %s", compressed_vault, e)
+            logger.error("Could not remove %s: %s", short_path(compressed_vault), e.strerror or e)
             ok = False
 
-    logger.info("Cleared Vault (%d top-level item(s) removed).", count)
+    logger.info(f"{paint('✓', 'green')} Cleared the Vault ({count} top-level item(s) removed).")
     return ok

@@ -1,9 +1,10 @@
 import logging
 import os
+import time
 from typing import List
 from ..engine import Engine
 
-from ..utils import DualProgressBar
+from ..utils import DualProgressBar, count_part, format_summary, short_path
 
 logger = logging.getLogger("octoback.add")
 
@@ -11,6 +12,8 @@ def add(engine: Engine, input_list: List[str], granular: bool = False) -> bool:
     if len(input_list) == 0:
         logger.error("Nothing provided and therefore nothing added.")
         return False
+
+    start_time = time.monotonic()
 
     # Calculate total bytes of paths being added
     total_bytes = 0
@@ -27,22 +30,34 @@ def add(engine: Engine, input_list: List[str], granular: bool = False) -> bool:
 
     tracker = DualProgressBar(total_bytes=total_bytes)
 
-    ok = True
+    tracked = 0
+    failed = 0
+
+    def track(p: str):
+        nonlocal tracked, failed
+        if engine.add_path_to_index(p, tracker=tracker):
+            tracked += 1
+        else:
+            failed += 1
+
     for path in input_list:
         if os.path.exists(path):
             if os.path.isdir(path) and granular:
                 for root, dirs, files in os.walk(path):
                     for file in files:
-                        full_path = os.path.join(root, file)
-                        ok = engine.add_path_to_index(full_path, tracker=tracker) and ok
+                        track(os.path.join(root, file))
                     # If this folder is empty, index the folder itself
                     if not dirs and not files:
-                        ok = engine.add_path_to_index(root, tracker=tracker) and ok
+                        track(root)
             else:
-                ok = engine.add_path_to_index(path, tracker=tracker) and ok
+                track(path)
         else:
-            logger.error("Path does not exist: %s", path)
-            ok = False
+            logger.error("Not found: %s", short_path(path))
+            failed += 1
 
     tracker.finish()
-    return engine.save_index() and ok
+    saved = engine.save_index()
+    ok = saved and failed == 0
+    print(format_summary("Add done", [count_part(tracked, "tracked"), count_part(failed, "failed")],
+                         time.monotonic() - start_time, ok))
+    return ok

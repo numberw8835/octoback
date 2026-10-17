@@ -3,7 +3,7 @@ import logging
 import os
 import shutil
 from ..engine import Engine
-from ..utils import is_inside
+from ..utils import format_action, is_inside, paint, short_path
 
 logger = logging.getLogger("octoback.vault")
 
@@ -54,9 +54,9 @@ def clean_vault(engine: Engine, yes_flag: bool = False) -> bool:
         return True
 
     # 3. Show ghost files and ask for confirmation
-    print(f"\nFound {len(ghost_files)} ghost file(s) in Vault:")
+    print(f"{paint('⚠', 'yellow')} Found {len(ghost_files)} ghost file(s) in the Vault:")
     for gf in ghost_files:
-        print(f"  - {gf}")
+        print(f"    {short_path(gf)}")
 
     if not yes_flag:
         confirm = input("\nDo you want to permanently delete these from the Vault? (yes/no): ").strip().lower()
@@ -72,10 +72,10 @@ def clean_vault(engine: Engine, yes_flag: bool = False) -> bool:
                 shutil.rmtree(gf)
             else:
                 os.remove(gf)
-            logger.info("Removed: %s", gf)
+            logger.info(format_action("deleted", gf))
         except OSError as e:
-            logger.error("Failed to delete %s: %s", gf, e)
+            logger.error("Could not delete %s: %s", short_path(gf), e.strerror or e)
             ok = False
 
-    logger.info("Vault clean complete! Removed %d ghost item(s).", len(ghost_files))
+    logger.info(f"{paint('✓', 'green')} Vault clean done ({len(ghost_files)} ghost item(s) removed).")
     return ok

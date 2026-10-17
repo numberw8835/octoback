@@ -1,8 +1,9 @@
 import logging
 import os
+import time
 from typing import List
 from modules.engine import Engine
-from ..utils import get_dir_hash_optimized, get_file_hash_optimized
+from ..utils import count_part, format_action, format_summary, get_dir_hash_optimized, get_file_hash_optimized, short_path
 
 logger = logging.getLogger("octoback.check")
 
@@ -13,20 +14,22 @@ def check(engine: Engine, input_paths: List[str]) -> bool:
         logger.warning("No paths provided to check.")
         return False
 
-    all_matched = True
+    start_time = time.monotonic()
+    matches = 0
+    problems = 0
 
     for input_path in input_paths:
         path = os.path.abspath(input_path)
 
         if not os.path.exists(path):
-            logger.warning("Path does not exist on disk: %s", path)
-            all_matched = False
+            logger.warning("Not found on disk: %s", short_path(path))
+            problems += 1
             continue
 
         indexed_entry = engine.index.get(path) or engine.index.get(input_path)
         if not indexed_entry:
-            logger.info("Path not found in index: %s", input_path)
-            all_matched = False
+            logger.warning("Not tracked: %s", short_path(path))
+            problems += 1
             continue
 
         expected_hash = indexed_entry.get("hash")
@@ -38,19 +41,18 @@ def check(engine: Engine, input_paths: List[str]) -> bool:
         elif os.path.isfile(path):
             current_hash = get_file_hash_optimized(path)
         else:
-            logger.warning("Unsupported path type: %s", path)
-            all_matched = False
+            logger.warning("Not a file or folder: %s", short_path(path))
+            problems += 1
             continue
 
         if current_hash == expected_hash:
-            logger.info("%s: Hash matches (%s)", input_path, current_hash)
+            logger.info(format_action("matches", path, current_hash[:8]))
+            matches += 1
         else:
-            logger.info(
-                "%s: Hash mismatch (current: %s, indexed: %s)",
-                input_path,
-                current_hash,
-                expected_hash,
-            )
-            all_matched = False
+            logger.info(format_action("changed", path, f"{current_hash[:8]}, tracked {expected_hash[:8]}"))
+            problems += 1
 
+    all_matched = problems == 0
+    print(format_summary("Check done", [count_part(matches, "match"), count_part(problems, "differ or missing")],
+                         time.monotonic() - start_time, all_matched))
     return all_matched

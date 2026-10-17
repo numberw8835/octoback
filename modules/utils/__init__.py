@@ -1,3 +1,4 @@
+from .style import format_action, format_size, format_summary, count_part, paint, short_path
 from .utils import (
     EMPTY_HASH,
     DualProgressBar,
@@ -13,6 +14,12 @@ from .utils import (
 )
 
 __all__ = [
+    "count_part",
+    "format_action",
+    "format_size",
+    "format_summary",
+    "paint",
+    "short_path",
     "EMPTY_HASH",
     "DualProgressBar",
     "ProgressReader",
