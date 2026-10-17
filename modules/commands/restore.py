@@ -31,7 +31,7 @@ def find_files_to_overwrite(vault_path: str, dest_path: str) -> List[str]:
     return overwritten
 
 
-def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_flag: bool = False):
+def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_flag: bool = False) -> bool:
     # Step 1: Decide what paths to restore
     if all_flag:
         targets = list(engine.index.keys())
@@ -40,7 +40,7 @@ def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_f
 
     if not targets:
         logger.warning("No targets specified for restore.")
-        return
+        return False
 
     # Step 2: Build pairs of (vault_source, destination_target) using mirrored paths
     restore_pairs = []
@@ -58,7 +58,7 @@ def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_f
 
     if not restore_pairs:
         logger.warning("No valid items found in vault to restore.")
-        return
+        return False
 
     # Step 3: Ask before replacing any of your existing files that differ from the Vault copy
     overwritten = []
@@ -74,7 +74,7 @@ def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_f
         confirm = input("\nDo you want to overwrite them with the Vault copies? (yes/no): ").strip().lower()
         if confirm not in ("y", "yes"):
             print("Restore aborted. Nothing was changed.")
-            return
+            return False
 
     # Step 4: Calculate total bytes across all vault items to restore
     total_bytes = 0
@@ -111,3 +111,4 @@ def restore(engine: Engine, input_list: List[str], all_flag: bool = False, yes_f
         logger.warning("%d item(s) were not fully restored:", len(failed))
         for path in failed:
             logger.warning("  - %s", path)
+    return not failed

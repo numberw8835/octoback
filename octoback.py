@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 from modules.engine import Engine
 from modules.commands.add import add
 from modules.commands.backup import backup
@@ -92,6 +93,26 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def is_vault_available(vault_path: str) -> bool:
+    """True if the Vault folder (or its compressed archive) is there."""
+    return os.path.isdir(vault_path) or os.path.exists(f"{vault_path}.tar.xz")
+
+
+def wait_for_vault(vault_path: str) -> None:
+    """Waits until the Vault shows up, e.g. when it lives on a drive that isn't plugged in yet."""
+    if is_vault_available(vault_path):
+        return
+    print(f"Waiting for the Vault at {vault_path} ...")
+    print("Plug in the drive (or run `octoback init` to create it). Press Ctrl+C to cancel.")
+    try:
+        while not is_vault_available(vault_path):
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(1)
+    print("Vault found, continuing.")
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -123,6 +144,10 @@ def main():
     if hasattr(args, "path") and args.path:
         args.path = os.path.abspath(args.path)
 
+    # Commands that touch the Vault wait for it (e.g. an external drive that isn't mounted yet)
+    if args.command in ("backup", "restore", "zip", "unzip", "vault") or getattr(args, "clear_target", None) == "vault":
+        wait_for_vault(engine.vault_path)
+
     # Check if Vault is currently compressed
     compressed_vault = f"{engine.vault_path}.tar.xz"
     if args.command in ("backup", "restore", "vault") and os.path.exists(compressed_vault):
@@ -130,41 +155,46 @@ def main():
         print(f"Please run `octoback unzip` first before running {args.command}.")
         sys.exit(1)
 
+    # Every command returns False when something failed, so scripts and cron can tell (exit code 1)
+    ok = True
     if args.command == "add":
-        add(engine, args.paths, granular=args.granular)
+        ok = add(engine, args.paths, granular=args.granular)
     elif args.command == "update":
-        update(engine, args.paths, all_flag=args.all_flag, granular=args.granular)
+        ok = update(engine, args.paths, all_flag=args.all_flag, granular=args.granular)
     elif args.command == "remove":
-        remove(engine, args.paths)
+        ok = remove(engine, args.paths)
     elif args.command == "check":
-        check(engine, args.paths)
+        ok = check(engine, args.paths)
     elif args.command == "backup":
-        backup(engine, args.paths, all_flag=args.all_flag)
+        ok = backup(engine, args.paths, all_flag=args.all_flag)
     elif args.command == "restore":
-        restore(engine, args.paths, all_flag=args.all_flag, yes_flag=args.yes)
+        ok = restore(engine, args.paths, all_flag=args.all_flag, yes_flag=args.yes)
     elif args.command == "prune":
-        prune(engine)
+        ok = prune(engine)
     elif args.command == "show":
         if args.target == "history":
             show_history(engine, limit=args.limit)
         else:
             show(engine)
     elif args.command == "zip":
-        zip_vault(engine)
+        ok = zip_vault(engine)
     elif args.command == "unzip":
-        unzip_vault(engine)
+        ok = unzip_vault(engine)
     elif args.command == "vault":
         if args.vault_action == "clean":
-            clean_vault(engine, yes_flag=args.yes)
+            ok = clean_vault(engine, yes_flag=args.yes)
         else:
             parser.parse_args(["vault", "--help"])
     elif args.command == "clear":
         if args.clear_target == "index":
-            clear_index(engine, yes_flag=args.yes)
+            ok = clear_index(engine, yes_flag=args.yes)
         elif args.clear_target == "vault":
-            clear_vault(engine, yes_flag=args.yes)
+            ok = clear_vault(engine, yes_flag=args.yes)
         else:
             parser.parse_args(["clear", "--help"])
+
+    if ok is False:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

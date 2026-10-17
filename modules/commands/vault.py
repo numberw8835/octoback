@@ -18,11 +18,11 @@ def is_still_tracked(engine: Engine, path: str) -> bool:
     return any(is_inside(path, tracked) or is_inside(tracked, path) for tracked in engine.index)
 
 
-def clean_vault(engine: Engine, yes_flag: bool = False) -> None:
+def clean_vault(engine: Engine, yes_flag: bool = False) -> bool:
     """Uses history to find and remove ghost files from the vault."""
     if not os.path.exists(engine.history_path):
         logger.info("No history found. Vault is clean.")
-        return
+        return True
 
     # 1. Collect paths the user untracked, and old locations of moved files.
     #    "deleted" (and old "removed") entries are kept: the Vault may hold the only copy.
@@ -51,7 +51,7 @@ def clean_vault(engine: Engine, yes_flag: bool = False) -> None:
 
     if not ghost_files:
         logger.info("Vault is clean! No ghost files found.")
-        return
+        return True
 
     # 3. Show ghost files and ask for confirmation
     print(f"\nFound {len(ghost_files)} ghost file(s) in Vault:")
@@ -62,9 +62,10 @@ def clean_vault(engine: Engine, yes_flag: bool = False) -> None:
         confirm = input("\nDo you want to permanently delete these from the Vault? (yes/no): ").strip().lower()
         if confirm not in ("y", "yes"):
             print("Vault cleaning aborted.")
-            return
+            return False
 
     # 4. Delete the ghost files from the Vault
+    ok = True
     for gf in ghost_files:
         try:
             if os.path.isdir(gf):
@@ -74,5 +75,7 @@ def clean_vault(engine: Engine, yes_flag: bool = False) -> None:
             logger.info("Removed: %s", gf)
         except OSError as e:
             logger.error("Failed to delete %s: %s", gf, e)
+            ok = False
 
     logger.info("Vault clean complete! Removed %d ghost item(s).", len(ghost_files))
+    return ok

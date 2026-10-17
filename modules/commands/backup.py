@@ -7,7 +7,7 @@ from ..utils import DualProgressBar, copy_to
 logger = logging.getLogger("octoback.backup")
 
 
-def backup(engine: Engine, input: List[str], all_flag: bool = False):
+def backup(engine: Engine, input: List[str], all_flag: bool = False) -> bool:
     # Step 1: Decide what paths to backup
     if all_flag:
         targets = list(engine.index.keys())
@@ -16,7 +16,7 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False):
 
     if not targets:
         logger.warning("No targets specified for backup.")
-        return
+        return False
 
     # Step 2: Calculate total bytes for the entire backup
     total_bytes = 0
@@ -61,3 +61,4 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False):
         logger.warning("%d item(s) were not fully backed up:", len(failed))
         for path in failed:
             logger.warning("  - %s", path)
+    return not failed

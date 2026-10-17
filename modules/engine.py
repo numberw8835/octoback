@@ -2,7 +2,7 @@ import json
 import os
 import time
 import logging
-from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_quick_signature, sync_folder
+from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_mount_point, get_quick_signature, sync_folder
 from .config import CONFIG_FILE, load_config, create_default_config
 
 logger = logging.getLogger("octoback.engine")
@@ -55,11 +55,11 @@ class Engine:
         except json.JSONDecodeError:
             logger.error("Invalid JSON in file: %s", target)
 
-    def save_index(self, path: str | None = None) -> None:
+    def save_index(self, path: str | None = None) -> bool:
         """save the index to file atomically."""
         if not self._loaded:
             logger.info("Index not loaded, cannot save!")
-            return
+            return False
         target = path or self.index_path
         tmp_path = f"{target}.tmp"
         try:
@@ -71,6 +71,7 @@ class Engine:
             os.replace(tmp_path, target)
             sync_folder(os.path.dirname(target))
             logger.info("Data saved to: %s", target)
+            return True
         except OSError as e:
             logger.error("Error saving index to file: %s", e)
             if os.path.exists(tmp_path):
@@ -78,7 +79,9 @@ class Engine:
                     os.remove(tmp_path)
                 except OSError:
                     pass
-                    
+            return False
+
+
     def add_path_to_index(self, path: str, tracker=None, path_hash: str = "", signature: str = "") -> bool:
         """adds a path to the index
         path_hash / signature: pass them when already computed, so the files aren't read twice
@@ -105,7 +108,8 @@ class Engine:
                 "hidden": is_hidden,
                 "hash": dir_hash,
                 "signature": signature,
-                "size": self._calculate_path_size(path)
+                "size": self._calculate_path_size(path),
+                "mount": get_mount_point(path)
             }
         elif os.path.isfile(path):
             file_hash = path_hash or get_file_hash_optimized(path, tracker=tracker)
@@ -123,7 +127,8 @@ class Engine:
                 "extension": ext,
                 "hash": file_hash,
                 "signature": signature,
-                "size": self._calculate_path_size(path)
+                "size": self._calculate_path_size(path),
+                "mount": get_mount_point(path)
             }
         else:
             logger.error("Unknown object type: %s", path)
@@ -145,7 +150,7 @@ class Engine:
         except OSError:
             pass
 
-    def remove_path_from_index(self, path: str, action: str = "untracked") -> None:
+    def remove_path_from_index(self, path: str, action: str = "untracked") -> bool:
         """removes a path from the index
         action: "untracked" when the user stops tracking it, "deleted" when it vanished from disk
         """
@@ -153,12 +158,21 @@ class Engine:
             del self.index[path]
             self._record_history(action, path)
             logger.info("Removed path: %s", path)
-        else:
-            logger.warning("Path not found in index: %s", path)
+            return True
+        logger.warning("Path not found in index: %s", path)
+        return False
+
+    def is_on_unplugged_drive(self, path: str) -> bool:
+        """True if the path was tracked on a drive that isn't mounted right now"""
+        mount = self.index.get(path, {}).get("mount")
+        return bool(mount) and not os.path.ismount(mount)
 
     def update_path_in_index(self, path: str, tracker=None):
         """checks if a path is new, moved, or copied"""
         if not os.path.exists(path):
+            if self.is_on_unplugged_drive(path):
+                logger.warning("Skipped (drive not plugged in): %s", path)
+                return "skipped"
             if path in self.index:
                 del self.index[path]
                 self._record_history("deleted", path)
@@ -169,6 +183,10 @@ class Engine:
 
         is_dir = os.path.isdir(path)
         path_type = "dir" if is_dir else "file"
+
+        # Remember which drive the path lives on (older entries don't have it yet)
+        if path in self.index:
+            self.index[path]["mount"] = get_mount_point(path)
 
         # Fast path: same sizes and modification times as last time, no need to read the contents
         signature = get_quick_signature(path)

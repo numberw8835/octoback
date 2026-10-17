@@ -25,12 +25,12 @@ def find_moved_file(engine: Engine, missing_path: str) -> str | None:
     return None
 
 
-def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool = False, granular: bool = False) -> None:
+def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool = False, granular: bool = False) -> bool:
     """Updates paths in index (checks for modified, moved, or copied files)."""
     targets = list(engine.index.keys()) if all_flag else (input_list or [])
     if not targets:
         logger.warning("No paths provided to update.")
-        return
+        return False
 
     # Calculate total bytes of existing targets
     total_bytes = 0
@@ -47,9 +47,12 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
 
     tracker = DualProgressBar(total_bytes=total_bytes)
 
+    failed = []
+
     def process(p: str):
         # The engine moves the bars: while hashing, or by skipping paths that didn't change
-        engine.update_path_in_index(p, tracker=tracker)
+        if engine.update_path_in_index(p, tracker=tracker) is None:
+            failed.append(p)
 
     for path in targets:
         if os.path.isdir(path) and granular:
@@ -61,7 +64,7 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
             prefix = path if path.endswith(os.sep) else path + os.sep
             for k in list(engine.index.keys()):
                 if k.startswith(prefix) and not os.path.exists(k):
-                    engine.update_path_in_index(k)
+                    process(k)
         elif os.path.exists(path):
             process(path)
         else:
@@ -69,7 +72,7 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
             if moved_to:
                 process(moved_to)  # Recorded as "moved"
             else:
-                engine.update_path_in_index(path)  # Recorded as "deleted"
+                process(path)  # Recorded as "deleted"
 
     tracker.finish()
-    engine.save_index()
+    return engine.save_index() and not failed

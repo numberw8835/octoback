@@ -7,17 +7,7 @@
   - Fix: back up the link itself (`os.readlink` / `os.symlink`), or at least print a warning when one is skipped.
   - Where: `copy_dir_to` / `copy_file_to` in `modules/utils/utils.py`
 
-- [ ] **D. Unplugged drive looks like deleted files**
-  - Example: files tracked on `/mnt/usb`, drive not mounted, `update --all` or `prune` -> all recorded as "deleted" and dropped from the index.
-  - Fix: if the path's parent folder is also missing, warn and skip instead of marking it deleted.
-  - Where: `update_path_in_index` in `modules/engine.py`, `modules/commands/prune.py`
-
 ## Scripting / cron
-
-- [ ] **F. Exit code is always 0**
-  - `check` returns True/False and backup/restore know what failed, but `main()` ignores it -> scripts and cron can't detect failures.
-  - Fix: `sys.exit(1)` when something failed.
-  - Where: `octoback.py`, plus return values from `backup` / `restore`
 
 - [ ] **G. Two commands at once lose index changes**
   - Example: cron `update --all` while you run `add` -> last save wins, the other's changes are lost (they also share `index.tmp`).

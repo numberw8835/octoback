@@ -109,7 +109,9 @@ storage:
   history_path: ~/.octoback/octoback-history.jsonl
 ```
 
-Point `vault_path` at an external drive to keep your backups off your main disk.
+Point `vault_path` at an external drive to keep your backups off your main disk. If the drive isn't plugged in, commands that need the Vault wait for it (Ctrl+C to cancel).
+
+Every command exits with code `1` when something fails (a file that couldn't be backed up, a `check` mismatch, a cancelled prompt), so it works in scripts and cron jobs.
 
 ## Project layout
 

@@ -285,6 +285,13 @@ def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = No
         print(f"Error accessing directory {dir_path}: {e}")
         return ""
 
+def get_mount_point(path: str) -> str:
+    """returns the mount point (drive) a path lives on, e.g. / or /run/media/user/Data"""
+    path = os.path.abspath(path)
+    while not os.path.ismount(path):
+        path = os.path.dirname(path)
+    return path
+
 def sync_folder(folder: str) -> None:
     """Force a rename inside folder onto the disk, so it survives a power cut"""
     fd = os.open(folder, os.O_RDONLY)
