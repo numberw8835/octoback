@@ -2,7 +2,7 @@ import json
 import os
 import time
 import logging
-from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_quick_signature
+from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_quick_signature, sync_folder
 from .config import CONFIG_FILE, load_config, create_default_config
 
 logger = logging.getLogger("octoback.engine")
@@ -65,7 +65,11 @@ class Engine:
         try:
             with open(tmp_path, 'w') as f:
                 json.dump(self.index, f, indent=4)
+                # Force the data onto the disk, so a power cut can't leave an empty index
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp_path, target)
+            sync_folder(os.path.dirname(target))
             logger.info("Data saved to: %s", target)
         except OSError as e:
             logger.error("Error saving index to file: %s", e)

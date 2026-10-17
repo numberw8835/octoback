@@ -192,10 +192,14 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
                 dst.write(chunk)
                 if tracker:
                     tracker.update(len(chunk))
+            # Force the data onto the disk, so a power cut can't leave an empty backup
+            dst.flush()
+            os.fsync(dst.fileno())
 
         # Keep permissions and timestamps (e.g. 600 on ssh keys, +x on scripts)
         shutil.copystat(source, tmp_dest)
         os.replace(tmp_dest, dest_file)
+        sync_folder(parent_dir)
         return True
 
     except OSError as e:
@@ -280,6 +284,14 @@ def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = No
     except OSError as e:
         print(f"Error accessing directory {dir_path}: {e}")
         return ""
+
+def sync_folder(folder: str) -> None:
+    """Force a rename inside folder onto the disk, so it survives a power cut"""
+    fd = os.open(folder, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 def is_inside(path: str, folder: str) -> bool:
     """True if path is the folder itself or somewhere inside it"""

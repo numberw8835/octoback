@@ -1,11 +1,5 @@
 # Octoback TODO
 
-## Data safety (do first)
-
-- [ ] **E. No `fsync`, a power cut can lose a backup that reported success**
-  - Fix: `f.flush()` + `os.fsync(f.fileno())` before `os.replace(...)`.
-  - Where: `copy_file_to` in `modules/utils/utils.py`, `save_index` in `modules/engine.py`
-
 ## Correctness
 
 - [ ] **C. Symlinks are silently left out**
