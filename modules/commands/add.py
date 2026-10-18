@@ -4,7 +4,7 @@ import time
 from typing import List
 from ..engine import Engine
 
-from ..utils import DualProgressBar, count_part, format_summary, short_path
+from ..utils import DualProgressBar, count_part, format_summary, is_inside, short_path
 
 logger = logging.getLogger("octoback.add")
 
@@ -46,13 +46,13 @@ def add(engine: Engine, input_list: List[str], whole: bool = False) -> bool:
         if os.path.exists(path):
             if os.path.isdir(path) and not whole:
                 engine.add_root(path)
-                for root, dirs, files in os.walk(path):
-                    for file in files:
-                        track(os.path.join(root, file))
-                    # If this folder is empty, index the folder itself
-                    if not dirs and not files:
-                        track(root)
+                for p in engine.walk_folder(path):
+                    track(p)
             else:
+                # The folder replaces any entries inside it (e.g. its files tracked one by one)
+                if os.path.isdir(path):
+                    for p in [p for p in engine.index if is_inside(p, path) and p != path]:
+                        del engine.index[p]
                 track(path)
         else:
             logger.error("Not found: %s", short_path(path))

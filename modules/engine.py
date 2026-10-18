@@ -96,6 +96,27 @@ class Engine:
         """the tracked folder path is in, if any"""
         return next((r for r in self.roots if is_inside(path, r)), None)
 
+    def walk_folder(self, folder: str):
+        """yields what to track in a folder: files, empty folders, and folders tracked as a whole"""
+        for root, dirs, files in os.walk(folder):
+            # If this folder is empty, track the folder itself
+            if not dirs and not files:
+                yield root
+            for d in list(dirs):
+                p = os.path.join(root, d)
+                if self.is_whole(p):
+                    dirs.remove(d)  # Checked as one unit, not walked into
+                    yield p
+            for f in files:
+                p = os.path.join(root, f)
+                if not os.path.islink(p):  # Symlinks are not backed up
+                    yield p
+
+    def is_whole(self, path: str) -> bool:
+        """True if the folder was added with --whole (empty folders also get a dir entry, with the empty hash)"""
+        entry = self.index.get(path, {})
+        return entry.get("type") == "dir" and entry.get("hash") != EMPTY_HASH
+
     def add_root(self, path: str) -> None:
         """tracks a folder file by file, replacing tracked folders inside it"""
         if not self.root_of(path):
@@ -224,7 +245,7 @@ class Engine:
         if signature and path in self.index and self.index[path].get("signature") == signature:
             if tracker:
                 tracker.skip_file(os.path.basename(path), self.index[path].get("size", 0))
-            logger.info(format_action("unchanged", path))
+            logger.debug(format_action("unchanged", path))
             return "unchanged"
 
         if is_dir:
@@ -239,7 +260,7 @@ class Engine:
             if self.index[path].get("hash") == current_hash:
                 # Touched but not changed: remember the new signature so it isn't hashed again
                 self.index[path]["signature"] = signature
-                logger.info(format_action("unchanged", path))
+                logger.debug(format_action("unchanged", path))
                 return "unchanged"
             else:
                 self.add_path_to_index(path, path_hash=current_hash, signature=signature)

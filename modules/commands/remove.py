@@ -17,7 +17,13 @@ def remove(engine: Engine, input_list: List[str]) -> bool:
             for p in [p for p in engine.index if is_inside(p, path)]:
                 engine.remove_path_from_index(p)
             continue
-        ok = engine.remove_path_from_index(path) and ok
+        inside = [p for p in engine.index if is_inside(p, path)]
+        if path not in engine.index and inside:
+            # A subfolder of a tracked folder: untrack everything in it
+            for p in inside:
+                engine.remove_path_from_index(p)
+        else:
+            ok = engine.remove_path_from_index(path) and ok
         if engine.root_of(path):
             logger.warning("%s is inside a tracked folder: the next update tracks it again", short_path(path))
     return engine.save_index() and ok

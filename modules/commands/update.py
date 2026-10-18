@@ -59,11 +59,8 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
         results[engine.update_path_in_index(p, tracker=tracker) or "failed"] += 1
 
     def process_folder(folder: str):
-        for root, dirs, files in os.walk(folder):
-            for f in files:
-                process(os.path.join(root, f))
-            if not dirs and not files:
-                process(root)
+        for p in engine.walk_folder(folder):
+            process(p)
         prefix = folder if folder.endswith(os.sep) else folder + os.sep
         for k in list(engine.index.keys()):
             if k.startswith(prefix) and not os.path.exists(k):
