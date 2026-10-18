@@ -8,18 +8,37 @@ logger = logging.getLogger("octoback.show")
 
 
 def show(engine: Engine) -> None:
-    """Display all tracked paths as aligned columns: type, size, hash, path."""
+    """Display what was added: tracked folders (with their size and file count), whole folders and files."""
     if not engine.index and not engine.roots:
         print("Nothing is tracked yet. Start with: octoback add <paths>")
         return
 
-    if engine.roots:
-        print(paint(f"Folders ({len(engine.roots)})", "bold"))
-        for root in engine.roots:
-            print(f"  {short_path(root)}")
-        print()
+    # Sum up the entries inside each tracked folder
+    sizes = {root: 0 for root in engine.roots}
+    counts = {root: 0 for root in engine.roots}
+    top = []
+    for path, meta in engine.index.items():
+        root = engine.root_of(path)
+        if root:
+            sizes[root] += meta.get("size", 0)
+            counts[root] += 1
+        else:
+            obj_type = "whole" if meta.get("type") == "dir" else meta.get("type", "?")
+            top.append((obj_type, meta.get("size", 0), path, ""))
+    top = [("folder", sizes[r], r, paint(f"  {counts[r]:,} items", "dim")) for r in engine.roots] + top
 
-    print(paint(f"Tracked ({len(engine.index)})", "bold"))
+    print(paint(f"Tracked ({len(top)})", "bold"))
+    for obj_type, size, path, note in top:
+        print(f"  {obj_type:<6}  {format_size(size):>9}  {short_path(path)}{note}")
+
+
+def show_index(engine: Engine) -> None:
+    """Display every index entry as aligned columns: type, size, hash, path."""
+    if not engine.index:
+        print("The index is empty.")
+        return
+
+    print(paint(f"Index ({len(engine.index)})", "bold"))
     for path, meta in engine.index.items():
         obj_type = meta.get("type", "?")
         size = format_size(meta.get("size", 0))
