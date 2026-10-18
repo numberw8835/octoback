@@ -2,7 +2,7 @@ import json
 import os
 import time
 import logging
-from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_mount_point, get_quick_signature, sync_folder
+from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_mount_point, get_quick_signature, is_inside, sync_folder
 from .utils.style import format_action, short_path
 from .config import CONFIG_FILE, load_config, create_default_config
 
@@ -13,10 +13,12 @@ class Engine:
         self.config_path = config_path
         self.config = load_config(config_path)
         self.index_path = self.config["storage"]["index_path"]
+        self.roots_path = self.config["storage"]["roots_path"]
         self.vault_path = self.config["storage"]["vault_path"]
         self.history_path = self.config["storage"]["history_path"]
         self.compression = self.config["settings"]["compression"]
         self.index = {}
+        self.roots = []  # Folders tracked file by file
         self._loaded = False
         if os.path.exists(self.index_path):
             self.load_index()
@@ -26,6 +28,7 @@ class Engine:
         create_default_config(self.config_path)
         self.config = load_config(self.config_path)
         self.index_path = self.config["storage"]["index_path"]
+        self.roots_path = self.config["storage"]["roots_path"]
         self.vault_path = self.config["storage"]["vault_path"]
         self.history_path = self.config["storage"]["history_path"]
         self.compression = self.config["settings"]["compression"]
@@ -36,6 +39,7 @@ class Engine:
             with open(self.index_path, 'w') as f:
                 json.dump({}, f)
         self.index = {}
+        self.roots = []
         self._loaded = True
 
     def load_index(self, path: str | None = None) -> None:
@@ -51,36 +55,50 @@ class Engine:
                     return
                 self._loaded = True
                 logger.debug("Index loaded: %s", target)
+            if os.path.exists(self.roots_path):
+                with open(self.roots_path, 'r') as f:
+                    self.roots = json.load(f)
         except FileNotFoundError:
             logger.debug("Index file not found: %s", target)
         except json.JSONDecodeError:
             logger.debug("Invalid JSON in index file: %s", target)
 
     def save_index(self, path: str | None = None) -> bool:
-        """save the index to file atomically."""
+        """save the index and tracked folders to file atomically."""
         if not self._loaded:
             logger.error("Index not loaded, cannot save")
             return False
-        target = path or self.index_path
+        return self._write_json(path or self.index_path, self.index) and self._write_json(self.roots_path, self.roots)
+
+    def _write_json(self, target: str, data) -> bool:
         tmp_path = f"{target}.tmp"
         try:
             with open(tmp_path, 'w') as f:
-                json.dump(self.index, f, indent=4)
-                # Force the data onto the disk, so a power cut can't leave an empty index
+                json.dump(data, f, indent=4)
+                # Force the data onto the disk, so a power cut can't leave an empty file
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, target)
             sync_folder(os.path.dirname(target))
-            logger.debug("Index saved: %s", target)
+            logger.debug("Saved: %s", target)
             return True
         except OSError as e:
-            logger.error("Could not save the index: %s", e.strerror or e)
+            logger.error("Could not save %s: %s", short_path(target), e.strerror or e)
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
             return False
+
+    def root_of(self, path: str) -> str | None:
+        """the tracked folder path is in, if any"""
+        return next((r for r in self.roots if is_inside(path, r)), None)
+
+    def add_root(self, path: str) -> None:
+        """tracks a folder file by file, replacing tracked folders inside it"""
+        if not self.root_of(path):
+            self.roots = [r for r in self.roots if not is_inside(r, path)] + [path]
 
 
     def add_path_to_index(self, path: str, tracker=None, path_hash: str = "", signature: str = "") -> bool:

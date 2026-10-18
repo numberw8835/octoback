@@ -8,7 +8,7 @@ from ..utils import DualProgressBar, count_part, format_summary, short_path
 
 logger = logging.getLogger("octoback.add")
 
-def add(engine: Engine, input_list: List[str], granular: bool = False) -> bool:
+def add(engine: Engine, input_list: List[str], whole: bool = False) -> bool:
     if len(input_list) == 0:
         logger.error("Nothing provided and therefore nothing added.")
         return False
@@ -44,7 +44,8 @@ def add(engine: Engine, input_list: List[str], granular: bool = False) -> bool:
         if os.path.islink(path):
             logger.warning("%s is a symlink: Octoback backs up what it points to, not the link itself", short_path(path))
         if os.path.exists(path):
-            if os.path.isdir(path) and granular:
+            if os.path.isdir(path) and not whole:
+                engine.add_root(path)
                 for root, dirs, files in os.walk(path):
                     for file in files:
                         track(os.path.join(root, file))

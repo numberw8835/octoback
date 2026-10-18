@@ -2,6 +2,7 @@ import logging
 import os
 from typing import List
 from ..engine import Engine
+from ..utils import is_inside, short_path
 
 logger = logging.getLogger("octoback.remove")
 
@@ -11,5 +12,12 @@ def remove(engine: Engine, input_list: List[str]) -> bool:
         return False
     ok = True
     for path in input_list:
+        if path in engine.roots:
+            engine.roots.remove(path)
+            for p in [p for p in engine.index if is_inside(p, path)]:
+                engine.remove_path_from_index(p)
+            continue
         ok = engine.remove_path_from_index(path) and ok
+        if engine.root_of(path):
+            logger.warning("%s is inside a tracked folder: the next update tracks it again", short_path(path))
     return engine.save_index() and ok

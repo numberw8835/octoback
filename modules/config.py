@@ -8,6 +8,7 @@ DEFAULT_CONFIG = {
     "storage": {
         "vault_path": os.path.join(os.path.expanduser("~"), "Vault"),
         "index_path": os.path.join(CONFIG_DIR, "octoback-index.json"),
+        "roots_path": os.path.join(CONFIG_DIR, "octoback-roots.json"),
         "history_path": os.path.join(CONFIG_DIR, "octoback-history.jsonl"),
     },
     "settings": {

@@ -9,6 +9,8 @@
 
 ## Known limits (not bugs)
 
+- A file inside a folder tracked file by file can't be untracked on its own: the next `update` finds it again. Untrack the whole folder, or track it with `add -w`. (An ignore list would fix this.)
+- A folder that was added before tracked folders existed (old `add -g`) isn't remembered. Run `octoback add <folder>` once more to register it.
 - A renamed file is only detected as "moved" if it stays inside the same folder tree. Otherwise the old path is "deleted" and the new one must be `add`ed.
 - A renamed folder is never detected as moved, only as deleted.
 - If you track `~` itself, its hash includes `~/Vault` and `~/.octoback`, so `update` / `check` always report it as modified.

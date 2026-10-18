@@ -9,9 +9,15 @@ logger = logging.getLogger("octoback.show")
 
 def show(engine: Engine) -> None:
     """Display all tracked paths as aligned columns: type, size, hash, path."""
-    if not engine.index:
+    if not engine.index and not engine.roots:
         print("Nothing is tracked yet. Start with: octoback add <paths>")
         return
+
+    if engine.roots:
+        print(paint(f"Folders ({len(engine.roots)})", "bold"))
+        for root in engine.roots:
+            print(f"  {short_path(root)}")
+        print()
 
     print(paint(f"Tracked ({len(engine.index)})", "bold"))
     for path, meta in engine.index.items():

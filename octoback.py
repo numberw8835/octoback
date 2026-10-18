@@ -35,13 +35,12 @@ def build_parser() -> argparse.ArgumentParser:
     # add
     p_add = subparsers.add_parser("add", help="Add files or directories to tracking index")
     p_add.add_argument("paths", nargs="+", help="Paths to add")
-    p_add.add_argument("-g", "--granular", action="store_true", help="Add directory contents individually")
+    p_add.add_argument("-w", "--whole", action="store_true", help="Track a folder as one unit")
 
     # update
     p_update = subparsers.add_parser("update", help="Update tracked paths in index (check modified/moved/copied)")
     p_update.add_argument("paths", nargs="*", default=[], help="Specific paths to update")
     p_update.add_argument("--all", dest="all_flag", action="store_true", help="Update all indexed items")
-    p_update.add_argument("-g", "--granular", action="store_true", help="Update directory contents individually")
 
     # remove
     p_remove = subparsers.add_parser("remove", help="Remove paths from tracking index")
@@ -55,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_backup = subparsers.add_parser("backup", help="Backup tracked items to the vault")
     p_backup.add_argument("paths", nargs="*", default=[], help="Specific paths to backup")
     p_backup.add_argument("--all", dest="all_flag", action="store_true", help="Backup all indexed items")
+    p_backup.add_argument("-u", "--update", dest="update_first", action="store_true", help="Update the index first")
 
     # restore
     p_restore = subparsers.add_parser("restore", help="Restore items from the vault")
@@ -185,15 +185,15 @@ def main():
     # Every command returns False when something failed, so scripts and cron can tell (exit code 1)
     ok = True
     if args.command == "add":
-        ok = add(engine, args.paths, granular=args.granular)
+        ok = add(engine, args.paths, whole=args.whole)
     elif args.command == "update":
-        ok = update(engine, args.paths, all_flag=args.all_flag, granular=args.granular)
+        ok = update(engine, args.paths, all_flag=args.all_flag)
     elif args.command == "remove":
         ok = remove(engine, args.paths)
     elif args.command == "check":
         ok = check(engine, args.paths)
     elif args.command == "backup":
-        ok = backup(engine, args.paths, all_flag=args.all_flag)
+        ok = backup(engine, args.paths, all_flag=args.all_flag, update_first=args.update_first)
     elif args.command == "restore":
         ok = restore(engine, args.paths, all_flag=args.all_flag, yes_flag=args.yes)
     elif args.command == "prune":

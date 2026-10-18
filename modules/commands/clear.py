@@ -10,7 +10,7 @@ logger = logging.getLogger("octoback.clear")
 def clear_index(engine: Engine, yes_flag: bool = False) -> bool:
     """Clears all tracked paths from the index without touching the Vault."""
     total = len(engine.index)
-    if total == 0:
+    if total == 0 and not engine.roots:
         logger.info("Index is already empty.")
         return True
 
@@ -24,6 +24,7 @@ def clear_index(engine: Engine, yes_flag: bool = False) -> bool:
             return False
 
     engine.index.clear()
+    engine.roots.clear()
     logger.info(f"{paint('✓', 'green')} Cleared {total} item(s) from the index.")
     return engine.save_index()
 

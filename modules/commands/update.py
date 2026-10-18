@@ -27,9 +27,10 @@ def find_moved_file(engine: Engine, missing_path: str) -> str | None:
     return None
 
 
-def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool = False, granular: bool = False) -> bool:
+def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool = False) -> bool:
     """Updates paths in index (checks for modified, moved, or copied files)."""
-    targets = list(engine.index.keys()) if all_flag else (input_list or [])
+    # Tracked folders are walked, so new files in them are found
+    targets = engine.roots + [p for p in engine.index if not engine.root_of(p)] if all_flag else (input_list or [])
     if not targets:
         logger.warning("No paths provided to update.")
         return False
@@ -57,17 +58,21 @@ def update(engine: Engine, input_list: List[str] | None = None, all_flag: bool =
         # The engine moves the bars: while hashing, or by skipping paths that didn't change
         results[engine.update_path_in_index(p, tracker=tracker) or "failed"] += 1
 
+    def process_folder(folder: str):
+        for root, dirs, files in os.walk(folder):
+            for f in files:
+                process(os.path.join(root, f))
+            if not dirs and not files:
+                process(root)
+        prefix = folder if folder.endswith(os.sep) else folder + os.sep
+        for k in list(engine.index.keys()):
+            if k.startswith(prefix) and not os.path.exists(k):
+                process(k)
+
     for path in targets:
-        if os.path.isdir(path) and granular:
-            for root, dirs, files in os.walk(path):
-                for f in files:
-                    process(os.path.join(root, f))
-                if not dirs and not files:
-                    process(root)
-            prefix = path if path.endswith(os.sep) else path + os.sep
-            for k in list(engine.index.keys()):
-                if k.startswith(prefix) and not os.path.exists(k):
-                    process(k)
+        # Folders are walked file by file, unless added with --whole
+        if path in engine.roots or (os.path.isdir(path) and engine.index.get(path, {}).get("type") != "dir"):
+            process_folder(path)
         elif os.path.exists(path):
             process(path)
         else:

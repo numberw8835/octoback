@@ -79,11 +79,11 @@ Colours turn off automatically when the output goes to a file or a pipe, or when
 | Command | What it does |
 |---|---|
 | `init` | Create the config, the index and the Vault |
-| `add <paths> [-g]` | Start tracking paths (`-g` tracks each file in a folder on its own) |
-| `update [<paths>] [--all] [-g]` | Detect modified / moved / copied / deleted / new files |
-| `remove <paths>` | Stop tracking paths (the Vault is not touched) |
+| `add <paths> [-w]` | Start tracking paths. Folders are tracked file by file, and files added to them later are picked up by `update` (`-w` tracks a folder as one unit) |
+| `update [<paths>] [--all]` | Detect modified / moved / copied / deleted / new files |
+| `remove <paths>` | Stop tracking paths (the Vault is not touched). Removing a tracked folder untracks every file in it |
 | `check <paths>` | Verify paths still match their tracked hash (always reads the full contents) |
-| `backup [<paths>] [--all]` | Copy items into the Vault |
+| `backup [<paths>] [--all] [-u]` | Copy items into the Vault (`-u` runs `update` first) |
 | `restore [<paths>] [--all] [-y]` | Copy items back from the Vault (asks before overwriting files that differ) |
 | `prune` | Drop paths that no longer exist from the index |
 | `show` | List tracked paths |

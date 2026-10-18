@@ -3,12 +3,16 @@ import os
 import time
 from typing import List
 from modules.engine import Engine
+from .update import update
 from ..utils import DualProgressBar, copy_to, count_part, format_size, format_summary, short_path
 
 logger = logging.getLogger("octoback.backup")
 
 
-def backup(engine: Engine, input: List[str], all_flag: bool = False) -> bool:
+def backup(engine: Engine, input: List[str], all_flag: bool = False, update_first: bool = False) -> bool:
+    # Step 0: Optionally update the index first
+    updated = update(engine, input, all_flag=all_flag) if update_first else True
+
     # Step 1: Decide what paths to backup
     if all_flag:
         targets = list(engine.index.keys())
@@ -67,4 +71,4 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False) -> bool:
              count_part(tracker.skipped_count, "unchanged"), count_part(len(failed), "failed"),
              count_part(tracker.symlinks_skipped, "symlinks skipped")]
     print(format_summary("Backup done", parts, time.monotonic() - start_time, not failed))
-    return not failed
+    return not failed and updated
