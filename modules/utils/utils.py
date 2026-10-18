@@ -4,6 +4,7 @@ import shutil
 import sys
 import tempfile
 import time
+from collections import deque
 from blake3 import blake3
 from .style import format_duration, format_size, paint, short_path
 
@@ -64,6 +65,7 @@ class DualProgressBar:
         self.symlinks_skipped = 0    # Symlinks are not backed up, only counted
         self.start_time = time.monotonic()
         self.last_render = 0.0
+        self.samples = deque()  # (time, read_bytes) of the last few seconds, for the speed
         self.enabled = sys.stdout.isatty()  # No bar when output goes to a file or a pipe
 
     def scanning(self, item_name: str):
@@ -130,8 +132,13 @@ class DualProgressBar:
         done = min(self.copied_total_bytes, self.total_bytes)
         text = f" {total_pct:>3}%  {format_size(done)} / {format_size(self.total_bytes)}"
         elapsed = now - self.start_time
-        if elapsed > 1 and self.read_bytes:
-            speed = self.read_bytes / elapsed
+        # Speed over the last 10 seconds, so the ETA follows slow and fast stretches
+        self.samples.append((now, self.read_bytes))
+        while now - self.samples[0][0] > 10:
+            self.samples.popleft()
+        then, then_bytes = self.samples[0]
+        speed = (self.read_bytes - then_bytes) / (now - then) if now - then > 1 else 0
+        if elapsed > 1 and speed:
             text += f"  {format_size(speed)}/s  ETA {format_duration((self.total_bytes - done) / speed)}"
         text += f"  {self.current_file} {file_pct}%"
 

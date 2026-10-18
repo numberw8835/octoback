@@ -19,6 +19,7 @@ class Engine:
         self.compression = self.config["settings"]["compression"]
         self.index = {}
         self.roots = []  # Folders tracked file by file
+        self._by_hash = None  # hash -> paths, built on first lookup
         self._loaded = False
         if os.path.exists(self.index_path):
             self.load_index()
@@ -152,7 +153,18 @@ class Engine:
         else:
             logger.error("Not a file or folder: %s", short_path(path))
             return False
+        if self._by_hash is not None:
+            self._by_hash.setdefault(self.index[path]["hash"], set()).add(path)
         return True
+
+    def paths_with_hash(self, path_hash: str) -> list:
+        """tracked paths with this hash, without scanning the whole index every time"""
+        if self._by_hash is None:
+            self._by_hash = {}
+            for p, data in self.index.items():
+                self._by_hash.setdefault(data.get("hash"), set()).add(p)
+        # Entries can go stale (deleted or modified paths), so check them against the index
+        return [p for p in self._by_hash.get(path_hash, ()) if self.index.get(p, {}).get("hash") == path_hash]
 
     def _record_history(self, action: str, path: str, origin: str = None):
         """records file lifecycle events to history file"""
@@ -238,8 +250,8 @@ class Engine:
         # Path is not in index: check if a missing entry was moved here (ignoring empty files)
         if current_hash != EMPTY_HASH:
             missing_matches = [
-                old_p for old_p, data in self.index.items()
-                if old_p != path and data.get("type") == path_type and data.get("hash") == current_hash and not os.path.exists(old_p)
+                old_p for old_p in self.paths_with_hash(current_hash)
+                if old_p != path and self.index[old_p].get("type") == path_type and not os.path.exists(old_p)
             ]
             if missing_matches:
                 for old_p in missing_matches:
@@ -252,8 +264,8 @@ class Engine:
         # Check for copied files
         if current_hash != EMPTY_HASH:
             copied_matches = [
-                p for p, data in self.index.items()
-                if p != path and data.get("type") == path_type and data.get("hash") == current_hash and os.path.exists(p)
+                p for p in self.paths_with_hash(current_hash)
+                if p != path and self.index[p].get("type") == path_type and os.path.exists(p)
             ]
             if copied_matches:
                 self.add_path_to_index(path, path_hash=current_hash, signature=signature)
