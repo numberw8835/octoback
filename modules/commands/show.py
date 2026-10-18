@@ -7,16 +7,12 @@ from ..utils import format_action, format_size, paint, short_path
 logger = logging.getLogger("octoback.show")
 
 
-def show(engine: Engine) -> None:
-    """Display what was added: tracked folders (with their size and file count), whole folders and files."""
-    if not engine.index and not engine.roots:
-        print("Nothing is tracked yet. Start with: octoback add <paths>")
-        return
-
+def top_items(engine: Engine) -> list:
+    """(type, size, path, items) for what was added: tracked folders, whole folders and files"""
     # Sum up the entries inside each tracked folder
     sizes = {root: 0 for root in engine.roots}
     counts = {root: 0 for root in engine.roots}
-    top = []
+    rest = []
     for path, meta in engine.index.items():
         root = engine.root_of(path)
         if root:
@@ -24,11 +20,20 @@ def show(engine: Engine) -> None:
             counts[root] += 1
         else:
             obj_type = "whole" if meta.get("type") == "dir" else meta.get("type", "?")
-            top.append((obj_type, meta.get("size", 0), path, ""))
-    top = [("folder", sizes[r], r, paint(f"  {counts[r]:,} items", "dim")) for r in engine.roots] + top
+            rest.append((obj_type, meta.get("size", 0), path, 1))
+    return [("folder", sizes[r], r, counts[r]) for r in engine.roots] + rest
 
+
+def show(engine: Engine) -> None:
+    """Display what was added: tracked folders (with their size and item count), whole folders and files."""
+    if not engine.index and not engine.roots:
+        print("Nothing is tracked yet. Start with: octoback add <paths>")
+        return
+
+    top = top_items(engine)
     print(paint(f"Tracked ({len(top)})", "bold"))
-    for obj_type, size, path, note in top:
+    for obj_type, size, path, count in top:
+        note = paint(f"  {count:,} item{'s' * (count != 1)}", "dim") if obj_type == "folder" else ""
         print(f"  {obj_type:<6}  {format_size(size):>9}  {short_path(path)}{note}")
 
 

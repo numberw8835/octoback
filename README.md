@@ -86,7 +86,7 @@ Colours turn off automatically when the output goes to a file or a pipe, or when
 | `backup [<paths>] [--all] [-u]` | Copy items into the Vault (`-u` runs `update` first) |
 | `restore [<paths>] [--all] [-y]` | Copy items back from the Vault (asks before overwriting files that differ) |
 | `prune` | Drop paths that no longer exist from the index |
-| `show` | List what you added (tracked folders with their size and item count) |
+| `show` | Browse what you added (`↑↓` move, `⏎` open a folder, `⌫` back, `q` quit). Prints a plain list when piped |
 | `show index` | List every index entry with its hash |
 | `show history [-n N]` | Show the last N lifecycle events (`0` for all) |
 | `zip` / `unzip` | Compress / decompress the Vault in place |

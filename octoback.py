@@ -7,6 +7,7 @@ from modules.config import CONFIG_DIR
 from modules.engine import Engine
 from modules.commands.add import add
 from modules.commands.backup import backup
+from modules.commands.browse import browse
 from modules.commands.check import check
 from modules.commands.clear import clear_index, clear_vault
 from modules.commands.prune import prune
@@ -204,6 +205,8 @@ def main():
             show_history(engine, limit=args.limit)
         elif args.target == "index":
             show_index(engine)
+        elif sys.stdout.isatty() and engine.index:
+            browse(engine)  # Plain list when piped, e.g. octoback show | grep
         else:
             show(engine)
     elif args.command == "zip":
