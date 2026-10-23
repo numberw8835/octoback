@@ -232,13 +232,15 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
             tracker.copied_count += 1
         return True
 
-    except OSError as e:
-        logger.error("Could not copy %s: %s", short_path(source), e.strerror or e)
+    except (OSError, KeyboardInterrupt) as e:
         if tmp_dest and os.path.exists(tmp_dest):
             try:
                 os.remove(tmp_dest)
             except OSError:
                 pass
+        if isinstance(e, KeyboardInterrupt):
+            raise  # Half-copied temp file is gone, let main() report the kill
+        logger.error("Could not copy %s: %s", short_path(source), e.strerror or e)
         return False
 
 def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None = None) -> bool:

@@ -29,7 +29,10 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False, update_firs
     total_bytes = 0
     for path in targets:
         if os.path.isfile(path):
-            total_bytes += os.path.getsize(path)
+            try:
+                total_bytes += os.path.getsize(path)
+            except OSError:
+                pass
         elif os.path.isdir(path):
             for root, dirs, files in os.walk(path):
                 for f in files:
@@ -47,18 +50,22 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False, update_firs
 
     # Step 5: Copy each target into the vault, mirroring its full path structure
     failed = []
-    for path in targets:
-        if not os.path.exists(path):
-            logger.warning("Not found, skipped: %s", short_path(path))
-            continue
+    try:
+        for path in targets:
+            if not os.path.exists(path):
+                logger.warning("Not found, skipped: %s", short_path(path))
+                continue
 
-        # Strip leading '/' so os.path.join preserves engine.vault_path:
-        # e.g. /home/user/doc.txt -> ~/Vault/home/user/doc.txt
-        rel_path = path.lstrip(os.sep)
-        dest_vault_path = os.path.join(engine.vault_path, rel_path)
+            # Strip leading '/' so os.path.join preserves engine.vault_path:
+            # e.g. /home/user/doc.txt -> ~/Vault/home/user/doc.txt
+            rel_path = path.lstrip(os.sep)
+            dest_vault_path = os.path.join(engine.vault_path, rel_path)
 
-        if not copy_to(source=path, destination=dest_vault_path, tracker=tracker):
-            failed.append(path)
+            if not copy_to(source=path, destination=dest_vault_path, tracker=tracker):
+                failed.append(path)
+    except KeyboardInterrupt:
+        tracker.finish()  # Clear the bar, then let main() report the kill
+        raise
 
     # Step 6: Clear the progress bar
     tracker.finish()

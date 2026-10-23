@@ -19,7 +19,10 @@ def add(engine: Engine, input_list: List[str], whole: bool = False) -> bool:
     total_bytes = 0
     for path in input_list:
         if os.path.isfile(path):
-            total_bytes += os.path.getsize(path)
+            try:
+                total_bytes += os.path.getsize(path)
+            except OSError:
+                pass
         elif os.path.isdir(path):
             for root, _, files in os.walk(path):
                 for f in files:

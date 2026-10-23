@@ -20,14 +20,13 @@ from modules.commands.vault import clean_vault
 from modules.commands.zip import zip_vault
 from modules.utils.style import format_header, paint, setup_logging, short_path
 
-setup_logging()
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="octoback",
         description="Octoback - High-performance local file backup and tracking tool.",
     )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show every file action, not just warnings and errors")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # init
@@ -92,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_cvault = clear_subparsers.add_parser("vault", help="Clear all backup files in the Vault (Index and PC files NOT touched)")
     p_cvault.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
+    # -v works after any command too; SUPPRESS keeps a subcommand from resetting `octoback -v <command>`
+    for p in [*subparsers.choices.values(), *vault_subparsers.choices.values(), *clear_subparsers.choices.values()]:
+        p.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS,
+                       help="Show every file action, not just warnings and errors")
+
     return parser
 
 
@@ -135,8 +139,17 @@ def wait_for_index_lock():
 
 
 def main():
+    try:
+        run()
+    except KeyboardInterrupt:
+        print("\n💥 Killed.")
+        sys.exit(1)
+
+
+def run():
     parser = build_parser()
     args = parser.parse_args()
+    setup_logging(args.verbose)
 
     if not args.command:
         print(format_header() + "\n")

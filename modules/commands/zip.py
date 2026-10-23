@@ -71,6 +71,15 @@ def zip_vault(engine: Engine) -> bool:
         print(format_summary("Vault compressed", [sizes], time.monotonic() - start_time))
         return True
 
+    except KeyboardInterrupt:
+        # Don't leave a half-written archive behind, then let main() report the kill
+        tracker.finish()
+        if os.path.exists(tmp_archive):
+            try:
+                os.remove(tmp_archive)
+            except OSError:
+                pass
+        raise
     except Exception as e:
         logger.error("Could not compress the Vault: %s", e)
         if os.path.exists(tmp_archive):

@@ -91,8 +91,8 @@ class SymbolFormatter(logging.Formatter):
         return ("\r\033[K" if sys.stderr.isatty() else "") + message
 
 
-def setup_logging() -> None:
-    """Sends all messages through SymbolFormatter (debug messages stay hidden)."""
+def setup_logging(verbose: bool = False) -> None:
+    """Sends all messages through SymbolFormatter. Warnings and errors always show, info lines only with --verbose."""
     handler = logging.StreamHandler()
     handler.setFormatter(SymbolFormatter())
-    logging.basicConfig(level=logging.INFO, handlers=[handler])
+    logging.basicConfig(level=logging.INFO if verbose else logging.WARNING, handlers=[handler])
