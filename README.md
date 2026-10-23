@@ -94,6 +94,8 @@ Colours turn off automatically when the output goes to a file or a pipe, or when
 | `clear index [-y]` | Forget every tracked path (the Vault is not touched) |
 | `clear vault [-y]` | Delete every backup (the index and your files are not touched) |
 
+Warnings and errors always show. Add `-v` (before or after the command) to also see every file action, e.g. `octoback update --all -v`. Ctrl+C stops any command cleanly: half-written copies are removed and the index is never left half-saved.
+
 ## How it works
 
 The **Vault** mirrors the full path of everything you back up:

@@ -21,7 +21,7 @@ def is_still_tracked(engine: Engine, path: str) -> bool:
 def clean_vault(engine: Engine, yes_flag: bool = False) -> bool:
     """Uses history to find and remove ghost files from the vault."""
     if not os.path.exists(engine.history_path):
-        logger.info("No history found. Vault is clean.")
+        print("No history found. Vault is clean.")
         return True
 
     # 1. Collect paths the user untracked, and old locations of moved files.
@@ -50,7 +50,7 @@ def clean_vault(engine: Engine, yes_flag: bool = False) -> bool:
                 ghost_files.append(vault_file)
 
     if not ghost_files:
-        logger.info("Vault is clean! No ghost files found.")
+        print("Vault is clean! No ghost files found.")
         return True
 
     # 3. Show ghost files and ask for confirmation
@@ -77,5 +77,5 @@ def clean_vault(engine: Engine, yes_flag: bool = False) -> bool:
             logger.error("Could not delete %s: %s", short_path(gf), e.strerror or e)
             ok = False
 
-    logger.info(f"{paint('✓', 'green')} Vault clean done ({len(ghost_files)} ghost item(s) removed).")
+    print(f"{paint('✓', 'green')} Vault clean done ({len(ghost_files)} ghost item(s) removed).")
     return ok

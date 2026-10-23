@@ -1,5 +1,6 @@
 import json
 import os
+import signal
 import time
 import logging
 from .utils.utils import EMPTY_HASH, get_dir_hash_optimized, get_file_hash_optimized, get_mount_point, get_quick_signature, is_inside, sync_folder
@@ -69,7 +70,19 @@ class Engine:
         if not self._loaded:
             logger.error("Index not loaded, cannot save")
             return False
-        return self._write_json(path or self.index_path, self.index) and self._write_json(self.roots_path, self.roots)
+        # Hold Ctrl+C until both files are written, so the index and tracked folders never disagree
+        interrupted = False
+        def defer(signum, frame):
+            nonlocal interrupted
+            interrupted = True
+        previous = signal.signal(signal.SIGINT, defer)
+        try:
+            saved = self._write_json(path or self.index_path, self.index) and self._write_json(self.roots_path, self.roots)
+        finally:
+            signal.signal(signal.SIGINT, previous)
+        if interrupted:
+            raise KeyboardInterrupt
+        return saved
 
     def _write_json(self, target: str, data) -> bool:
         tmp_path = f"{target}.tmp"

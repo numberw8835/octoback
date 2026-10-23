@@ -11,7 +11,7 @@ def clear_index(engine: Engine, yes_flag: bool = False) -> bool:
     """Clears all tracked paths from the index without touching the Vault."""
     total = len(engine.index)
     if total == 0 and not engine.roots:
-        logger.info("Index is already empty.")
+        print("Index is already empty.")
         return True
 
     print(f"{paint('⚠', 'yellow')} This will remove all {total} tracked item(s) from the index.")
@@ -25,8 +25,10 @@ def clear_index(engine: Engine, yes_flag: bool = False) -> bool:
 
     engine.index.clear()
     engine.roots.clear()
-    logger.info(f"{paint('✓', 'green')} Cleared {total} item(s) from the index.")
-    return engine.save_index()
+    if not engine.save_index():
+        return False
+    print(f"{paint('✓', 'green')} Cleared {total} item(s) from the index.")
+    return True
 
 
 def clear_vault(engine: Engine, yes_flag: bool = False) -> bool:
@@ -35,7 +37,7 @@ def clear_vault(engine: Engine, yes_flag: bool = False) -> bool:
     has_files = os.path.isdir(engine.vault_path) and len(os.listdir(engine.vault_path)) > 0
     has_archive = os.path.exists(compressed_vault)
     if not has_files and not has_archive:
-        logger.info("Vault is already empty.")
+        print("Vault is already empty.")
         return True
 
     print(f"{paint('⚠', 'yellow')} This will permanently delete ALL backups in the Vault ({short_path(engine.vault_path)}).")
@@ -71,5 +73,5 @@ def clear_vault(engine: Engine, yes_flag: bool = False) -> bool:
             logger.error("Could not remove %s: %s", short_path(compressed_vault), e.strerror or e)
             ok = False
 
-    logger.info(f"{paint('✓', 'green')} Cleared the Vault ({count} top-level item(s) removed).")
+    print(f"{paint('✓', 'green')} Cleared the Vault ({count} top-level item(s) removed).")
     return ok
