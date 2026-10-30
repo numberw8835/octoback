@@ -288,10 +288,18 @@ class Engine:
                 if old_p != path and self.index[old_p].get("type") == path_type and not os.path.exists(old_p)
             ]
             if missing_matches:
-                for old_p in missing_matches:
-                    del self.index[old_p]
-                    self._record_history("moved", path, old_p)
-                    logger.info(format_action("moved", path, f"from {short_path(old_p)}"))
+                # Pick the single closest match using path proximity and filename
+                best_match = max(
+                    missing_matches,
+                    key=lambda old: (
+                        len(os.path.commonpath([path, old])),
+                        os.path.basename(path) == os.path.basename(old),
+                        old,
+                    ),
+                )
+                del self.index[best_match]
+                self._record_history("moved", path, best_match)
+                logger.info(format_action("moved", path, f"from {short_path(best_match)}"))
                 self.add_path_to_index(path, path_hash=current_hash, signature=signature)
                 return "moved"
 
