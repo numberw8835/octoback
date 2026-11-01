@@ -41,6 +41,8 @@ def unzip_vault(engine: Engine) -> bool:
                     tar.extract(member, path=parent_dir)
         tracker.finish()
 
+        # Force the extracted files onto the disk before the archive is deleted, so a power cut can't lose both
+        os.sync()
         # Remove the archive file after successful extraction
         os.remove(archive_path)
         print(format_summary("Vault decompressed", [count_part(tracker.files_copied_count, "entries")],

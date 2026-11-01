@@ -38,8 +38,11 @@ def add(engine: Engine, input_list: List[str], whole: bool = False) -> bool:
 
     def track(p: str):
         nonlocal tracked, failed
+        is_new = p not in engine.index
         if engine.add_path_to_index(p, tracker=tracker):
             tracked += 1
+            if is_new:
+                engine._record_history("new", p)  # So vault clean knows this name holds a new file
         else:
             failed += 1
 

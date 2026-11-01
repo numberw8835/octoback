@@ -5,6 +5,7 @@ import tarfile
 import time
 from modules.engine import Engine
 from ..utils import DualProgressBar, ProgressReader, format_size, format_summary, paint, short_path, sorted_dirs_and_files
+from ..utils.utils import sync_folder
 
 logger = logging.getLogger("octoback.zip")
 
@@ -36,6 +37,11 @@ def zip_vault(engine: Engine) -> bool:
     tmp_archive = f"{archive_path}.tmp"
     parent_dir = os.path.dirname(vault_path)
 
+    # A new archive would replace the old one and lose what is only in it
+    if os.path.exists(archive_path):
+        logger.error("%s already exists: run `octoback unzip` first", short_path(archive_path))
+        return False
+
     # Calculate total bytes in the vault for the progress bar
     total_bytes = 0
     for root, _, files in os.walk(vault_path):
@@ -51,19 +57,24 @@ def zip_vault(engine: Engine) -> bool:
     try:
         logger.info(paint(f"Compressing {short_path(vault_path)} into {os.path.basename(archive_path)} ...", "dim"))
         # Archive vault contents one entry at a time so the progress bar can follow
-        with tarfile.open(tmp_archive, "w:xz", preset=9) as tar:
-            for root, dirs, files in sorted_dirs_and_files(os.walk(vault_path)):
-                add_to_archive(tar, root, parent_dir, tracker)
-                for name in files:
-                    add_to_archive(tar, os.path.join(root, name), parent_dir, tracker)
-                # Symlinked folders are listed but never walked, so add them as links here
-                for name in dirs:
-                    if os.path.islink(os.path.join(root, name)):
+        with open(tmp_archive, "wb") as raw:
+            with tarfile.open(fileobj=raw, mode="w:xz", preset=9) as tar:
+                for root, dirs, files in sorted_dirs_and_files(os.walk(vault_path)):
+                    add_to_archive(tar, root, parent_dir, tracker)
+                    for name in files:
                         add_to_archive(tar, os.path.join(root, name), parent_dir, tracker)
+                    # Symlinked folders are listed but never walked, so add them as links here
+                    for name in dirs:
+                        if os.path.islink(os.path.join(root, name)):
+                            add_to_archive(tar, os.path.join(root, name), parent_dir, tracker)
+            # Force the archive onto the disk before the Vault is deleted, so a power cut can't lose both
+            raw.flush()
+            os.fsync(raw.fileno())
         tracker.finish()
 
         # Safely move temporary archive to final archive path
         os.replace(tmp_archive, archive_path)
+        sync_folder(parent_dir)
 
         # Remove the uncompressed vault directory
         shutil.rmtree(vault_path)

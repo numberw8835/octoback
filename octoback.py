@@ -3,16 +3,16 @@ import fcntl
 import os
 import sys
 import time
-from modules.config import CONFIG_DIR
+from modules.config import CONFIG_DIR, load_config
 from modules.engine import Engine
 from modules.commands.add import add
-from modules.commands.backup import backup
+from modules.commands.backup import backup, pick_backup
 from modules.commands.browse import browse
 from modules.commands.check import check
 from modules.commands.clear import clear_index, clear_vault
 from modules.commands.prune import prune
 from modules.commands.remove import remove
-from modules.commands.restore import restore
+from modules.commands.restore import pick_restore, restore
 from modules.commands.show import show, show_history, show_index
 from modules.commands.unzip import unzip_vault
 from modules.commands.update import update
@@ -51,13 +51,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("paths", nargs="+", help="Paths to check")
 
     # backup
-    p_backup = subparsers.add_parser("backup", help="Backup tracked items to the vault")
+    p_backup = subparsers.add_parser("backup", help="Backup tracked items to the vault (no paths: pick them from a list)")
     p_backup.add_argument("paths", nargs="*", default=[], help="Specific paths to backup")
     p_backup.add_argument("--all", dest="all_flag", action="store_true", help="Backup all indexed items")
     p_backup.add_argument("-u", "--update", dest="update_first", action="store_true", help="Update the index first")
 
     # restore
-    p_restore = subparsers.add_parser("restore", help="Restore items from the vault")
+    p_restore = subparsers.add_parser("restore", help="Restore items from the vault (no paths: pick them from a list)")
     p_restore.add_argument("paths", nargs="*", default=[], help="Specific paths to restore")
     p_restore.add_argument("--all", dest="all_flag", action="store_true", help="Restore all indexed items")
     p_restore.add_argument("-y", "--yes", action="store_true", help="Overwrite existing files without asking")
@@ -82,6 +82,8 @@ def build_parser() -> argparse.ArgumentParser:
     vault_subparsers = p_vault.add_subparsers(dest="vault_action", help="Vault action")
     p_vclean = vault_subparsers.add_parser("clean", help="Remove ghost files from the Vault using history")
     p_vclean.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    p_vclean.add_argument("--remove-deleted", action="store_true",
+                          help="Also remove backups of files that were deleted from disk")
 
     # clear
     p_clear = subparsers.add_parser("clear", help="Clear tracking data or Vault backups")
@@ -122,7 +124,8 @@ def wait_for_vault(vault_path: str) -> None:
 def wait_for_index_lock():
     """
     Locks ~/.octoback/octoback.lock until this command ends, waiting if another command holds it,
-    so two commands never overwrite each other's index changes. Linux frees the lock on exit or crash.
+    so two commands never overwrite each other's index changes or change the Vault at the same time.
+    Linux frees the lock on exit or crash.
     """
     os.makedirs(CONFIG_DIR, exist_ok=True)
     lock_file = open(os.path.join(CONFIG_DIR, "octoback.lock"), "w")
@@ -156,8 +159,19 @@ def run():
         parser.print_help()
         sys.exit(0)
 
-    # Commands that change the index wait for any other one to finish, before loading the index
-    if args.command in ("add", "update", "remove", "prune") or getattr(args, "clear_target", None) == "index":
+    # Commands that use the Vault wait for it first (e.g. a drive that isn't plugged in yet),
+    # so they don't hold the lock while they wait
+    needs_vault = args.command in ("backup", "restore", "zip", "unzip", "vault") or getattr(args, "clear_target", None) == "vault"
+    if needs_vault:
+        wait_for_vault(load_config()["storage"]["vault_path"])
+
+    # restore and backup without paths open a list to pick from (in a real terminal only).
+    # The list is browsed without the lock: it is taken once something is picked.
+    picking = (args.command in ("backup", "restore") and not args.paths and not args.all_flag
+               and sys.stdin.isatty() and sys.stdout.isatty() and os.environ.get("TERM", "dumb") != "dumb")
+
+    # Commands that change the index or the Vault wait for any other one to finish, before loading the index
+    if args.command in ("add", "update", "remove", "prune", "backup", "restore", "zip", "unzip", "vault", "clear") and not picking:
         index_lock = wait_for_index_lock()
 
     engine = Engine()
@@ -186,8 +200,8 @@ def run():
     if hasattr(args, "path") and args.path:
         args.path = os.path.abspath(args.path)
 
-    # Commands that touch the Vault wait for it (e.g. an external drive that isn't mounted yet)
-    if args.command in ("backup", "restore", "zip", "unzip", "vault") or getattr(args, "clear_target", None) == "vault":
+    # The drive may have gone while this command waited for the lock
+    if needs_vault:
         wait_for_vault(engine.vault_path)
 
     # Check if Vault is currently compressed
@@ -207,8 +221,23 @@ def run():
         ok = remove(engine, args.paths)
     elif args.command == "check":
         ok = check(engine, args.paths)
+    elif args.command == "backup" and picking:
+        if args.update_first:
+            # Update everything first, so new files show up in the list too
+            with wait_for_index_lock():
+                engine = Engine()  # Read again, now under the lock
+                ok = update(engine, [], all_flag=True)
+        picked = pick_backup(engine)
+        if picked:
+            index_lock = wait_for_index_lock()
+            ok = backup(engine, picked) and ok
     elif args.command == "backup":
         ok = backup(engine, args.paths, all_flag=args.all_flag, update_first=args.update_first)
+    elif args.command == "restore" and picking:
+        picked = pick_restore(engine)
+        if picked:
+            index_lock = wait_for_index_lock()
+            ok = restore(engine, picked, yes_flag=args.yes)
     elif args.command == "restore":
         ok = restore(engine, args.paths, all_flag=args.all_flag, yes_flag=args.yes)
     elif args.command == "prune":
@@ -228,7 +257,7 @@ def run():
         ok = unzip_vault(engine)
     elif args.command == "vault":
         if args.vault_action == "clean":
-            ok = clean_vault(engine, yes_flag=args.yes)
+            ok = clean_vault(engine, yes_flag=args.yes, remove_deleted=args.remove_deleted)
         else:
             parser.parse_args(["vault", "--help"])
     elif args.command == "clear":

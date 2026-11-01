@@ -1,3 +1,4 @@
+import errno
 import logging
 import os
 import shutil
@@ -39,13 +40,15 @@ def get_quick_signature(path: str) -> str:
             stat = os.stat(path)
             return f"{stat.st_size}:{stat.st_mtime_ns}"
         signature = blake3()
-        for root, dirs, files in sorted_dirs_and_files(os.walk(path)):
+        errors = []
+        for root, dirs, files in sorted_dirs_and_files(os.walk(path, onerror=errors.append)):
             for name in dirs + files:
                 entry_path = os.path.join(root, name)
                 stat = os.lstat(entry_path)
                 rel = os.path.relpath(entry_path, path)
                 signature.update(os.fsencode(f"{rel}\0{stat.st_size}:{stat.st_mtime_ns}\n"))
-        return signature.hexdigest()
+        # A folder that can't be fully read has no reliable signature
+        return "" if errors else signature.hexdigest()
     except OSError:
         return ""  # Unknown signature: never matches, so the path gets hashed
 
@@ -168,16 +171,73 @@ class ProgressReader:
         # Everything else (seek, tell, close...) goes straight to the real file
         return getattr(self.f, name)
 
-def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None = None) -> bool:
+# Where old backups go when a file became a folder or the other way around (outside the mirrored tree,
+# so a restore never brings them back)
+REPLACED_DIR = ".octoback-replaced"
+
+def set_aside(vault_root: str, path: str) -> bool:
+    """moves an old backup to <Vault>/.octoback-replaced/<date>/<same path>, so it is kept, never deleted"""
+    rel = os.path.relpath(path, vault_root)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for n in range(1000):
+        aside = os.path.join(vault_root, REPLACED_DIR, f"{stamp}-{n}" if n else stamp, rel)
+        try:
+            os.makedirs(os.path.dirname(aside), exist_ok=True)
+            if os.path.lexists(aside):
+                continue
+            os.rename(path, aside)
+            logger.warning("Kept the old backup in %s (a file became a folder, or the other way around)", short_path(aside))
+            return True
+        except (FileExistsError, NotADirectoryError):
+            continue  # Something set aside earlier this second is in the way: try the next folder
+        except OSError as e:
+            logger.error("Could not move the old backup %s aside: %s", short_path(path), e.strerror or e)
+            return False
+    return False
+
+def move_aside(vault_root: str, dest: str, is_dir: bool) -> bool:
+    """makes room in the Vault for dest when a file became a folder (or the other way around)"""
+    if os.path.isdir(os.path.dirname(dest)) and (not os.path.lexists(dest) or os.path.isdir(dest) == is_dir):
+        return True  # Nothing in the way (the usual case)
+    # Every folder on the way must be a folder, and dest itself must be what is copied there
+    parts = os.path.relpath(dest, vault_root).split(os.sep)
+    current = vault_root
+    for i, part in enumerate(parts):
+        current = os.path.join(current, part)
+        if not os.path.lexists(current):
+            return True
+        wants_folder = is_dir if i == len(parts) - 1 else True
+        if os.path.isdir(current) != wants_folder:
+            return set_aside(vault_root, current)
+    return True
+
+def make_folder(path: str, vault_root: str | None = None) -> bool:
+    """creates a folder (in the Vault, an old backup in the way is moved aside first), False if it can't"""
+    if vault_root and not move_aside(vault_root, path, is_dir=True):
+        return False
+    try:
+        os.makedirs(path, exist_ok=True)
+        return True
+    except OSError as e:
+        logger.error("Could not create %s: %s", short_path(path), e.strerror or e)
+        return False
+
+def copy_file_to(source: str, dest_file: str, tracker: DualProgressBar | None = None, vault_root: str | None = None) -> bool:
     """
     Optimized file copy:
     1. Same size and modification time - already up to date, nothing is read.
     2. Same size but different time - compares content hashes before copying.
     3. Streams in 64MB chunks with atomic temp file rename.
+    vault_root: when copying into the Vault, an old backup in the way is moved aside first
     """
     tmp_dest = None
     try:
-        dest_file = os.path.join(destination, os.path.basename(source)) if os.path.isdir(destination) else destination
+        if vault_root and not move_aside(vault_root, dest_file, is_dir=False):
+            return False
+        # Never write into a folder that sits where the file belongs
+        if os.path.isdir(dest_file):
+            logger.error("Could not copy %s: %s is a folder", short_path(source), short_path(dest_file))
+            return False
 
         # Fast path: check if destination exists and is identical
         if os.path.exists(dest_file):
@@ -243,18 +303,20 @@ def copy_file_to(source: str, destination: str, tracker: DualProgressBar | None 
         logger.error("Could not copy %s: %s", short_path(source), e.strerror or e)
         return False
 
-def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None = None) -> bool:
+def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None = None, vault_root: str | None = None) -> bool:
     """
     Optimized directory copy:
     copies individual files using copy_file_to, which skips files that are already up to date.
     """
     try:
         target_dir = destination
-        os.makedirs(target_dir, exist_ok=True)
+        if not make_folder(target_dir, vault_root):
+            return False
 
         # Walk and copy/update files, keep going on errors and report at the end
         all_copied = True
-        for root, dirs, files in sorted_dirs_and_files(os.walk(source)):
+        unreadable = []  # Folders that couldn't be listed
+        for root, dirs, files in sorted_dirs_and_files(os.walk(source, onerror=unreadable.append)):
             # Never walk into the destination itself (e.g. backing up ~ while the Vault is ~/Vault)
             dirs[:] = [d for d in dirs if not is_inside(target_dir, os.path.join(root, d))]
 
@@ -264,9 +326,14 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
 
             rel_path = os.path.relpath(root, source)
             current_dest = target_dir if rel_path == "." else os.path.join(target_dir, rel_path)
-            os.makedirs(current_dest, exist_ok=True)
+            if not make_folder(current_dest, vault_root):
+                all_copied = False
+                dirs[:] = []  # Skip what is inside it, keep copying the rest
+                continue
 
             for file in files:
+                if is_partial_copy(file):
+                    continue
                 src_file = os.path.join(root, file)
                 # Skip symlinks or non-regular files to prevent infinite loops/issues
                 if os.path.islink(src_file):
@@ -276,24 +343,26 @@ def copy_dir_to(source: str, destination: str, tracker: DualProgressBar | None =
                 if not os.path.isfile(src_file):
                     continue
                 dst_file = os.path.join(current_dest, file)
-                if not copy_file_to(src_file, dst_file, tracker=tracker):
+                if not copy_file_to(src_file, dst_file, tracker=tracker, vault_root=vault_root):
                     all_copied = False
 
-        return all_copied
+        for error in unreadable:
+            logger.error("Could not read %s: %s", short_path(error.filename), error.strerror or error)
+        return all_copied and not unreadable
     except OSError as e:
         logger.error("Could not copy %s: %s", short_path(source), e.strerror or e)
         return False
 
-def copy_to(source: str, destination: str, tracker: DualProgressBar | None = None) -> bool:
+def copy_to(source: str, destination: str, tracker: DualProgressBar | None = None, vault_root: str | None = None) -> bool:
     """Checks if source is a file or dir, checks hashes, and copies files in 64MB chunks."""
     if not os.path.exists(source):
         logger.error("Not found: %s", short_path(source))
         return False
 
     if os.path.isfile(source):
-        return copy_file_to(source, destination, tracker=tracker)
+        return copy_file_to(source, destination, tracker=tracker, vault_root=vault_root)
     elif os.path.isdir(source):
-        return copy_dir_to(source, destination, tracker=tracker)
+        return copy_dir_to(source, destination, tracker=tracker, vault_root=vault_root)
     else:
         logger.error("Not a file or folder: %s", short_path(source))
         return False
@@ -306,7 +375,8 @@ def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = No
     dir_hash = blake3()
     try:
         # One line per entry: "sub/" for a folder, "sub/b.txt\0<file hash>" for a file
-        for root, dirs, files in sorted_dirs_and_files(os.walk(dir_path)):
+        errors = []
+        for root, dirs, files in sorted_dirs_and_files(os.walk(dir_path, onerror=errors.append)):
             for name in dirs:
                 rel = os.path.relpath(os.path.join(root, name), dir_path)
                 dir_hash.update(os.fsencode(f"{rel}/\n"))
@@ -320,6 +390,10 @@ def get_dir_hash_optimized(dir_path: str, tracker: "DualProgressBar | None" = No
                     return ""  # Unreadable file: fail instead of pretending it matches
                 rel = os.path.relpath(file_path, dir_path)
                 dir_hash.update(os.fsencode(f"{rel}\0{file_hash}\n"))
+        if errors:
+            # Unreadable subfolder: fail instead of a hash that leaves part of the folder out
+            logger.error("Could not read %s: %s", short_path(errors[0].filename), errors[0].strerror or errors[0])
+            return ""
         return dir_hash.hexdigest()
     except OSError as e:
         logger.error("Could not read %s: %s", short_path(dir_path), e.strerror or e)
@@ -343,6 +417,27 @@ def sync_folder(folder: str) -> None:
 def is_inside(path: str, folder: str) -> bool:
     """True if path is the folder itself or somewhere inside it"""
     return path == folder or path.startswith(folder + os.sep)
+
+def is_gone(path: str) -> bool:
+    """True if path is surely not there, not just unreadable (e.g. inside a folder without permission)"""
+    try:
+        os.stat(path)
+        return False
+    except (FileNotFoundError, NotADirectoryError):
+        return True
+    except OSError as e:
+        return e.errno == errno.ELOOP  # A symlink loop can never lead to the data
+
+def is_partial_copy(name: str) -> bool:
+    """True for the temp file of a copy that was interrupted (see copy_file_to): never real data"""
+    return name.startswith(".octoback-") and name.endswith(".tmp")
+
+def ancestors(path: str):
+    """yields the folders above path, up to /"""
+    parent = os.path.dirname(path)
+    while parent != path:
+        yield parent
+        path, parent = parent, os.path.dirname(parent)
 
 def sorted_dirs_and_files(walk):
     """generator that yields (root, sorted(dirs), sorted(files))"""

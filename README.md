@@ -83,18 +83,18 @@ Colours turn off automatically when the output goes to a file or a pipe, or when
 | `update [<paths>] [--all]` | Detect modified / moved / copied / deleted / new files |
 | `remove <paths>` | Stop tracking paths (the Vault is not touched). Removing a tracked folder untracks every file in it |
 | `check <paths>` | Verify paths still match their tracked hash (always reads the full contents) |
-| `backup [<paths>] [--all] [-u]` | Copy items into the Vault (`-u` runs `update` first) |
-| `restore [<paths>] [--all] [-y]` | Copy items back from the Vault (asks before overwriting files that differ) |
+| `backup [<paths>] [--all] [-u]` | Copy items into the Vault (`-u` runs `update` first). Without paths, pick them from a list (`space` select, `b` back up) |
+| `restore [<paths>] [--all] [-y]` | Copy items back from the Vault (asks before overwriting files that differ). Without paths, pick from everything in the Vault, deleted files included (`space` select, `r` restore) |
 | `prune` | Drop paths that no longer exist from the index |
 | `show` | Browse what you added (`↑↓` move, `⏎` open a folder, `⌫` back, `q` quit). Prints a plain list when piped |
 | `show index` | List every index entry with its hash |
 | `show history [-n N]` | Show the last N lifecycle events (`0` for all) |
-| `zip` / `unzip` | Compress / decompress the Vault in place |
-| `vault clean [-y]` | Remove backups of untracked files and old locations of moved files |
+| `zip` / `unzip` | Compress / decompress the Vault in place (`zip` refuses while a `Vault.tar.xz` is already there) |
+| `vault clean [-y] [--remove-deleted]` | Remove backups of untracked files and old locations of moved files (`--remove-deleted` also removes backups of deleted files) |
 | `clear index [-y]` | Forget every tracked path (the Vault is not touched) |
 | `clear vault [-y]` | Delete every backup (the index and your files are not touched) |
 
-Warnings and errors always show. Add `-v` (before or after the command) to also see every file action, e.g. `octoback update --all -v`. Ctrl+C stops any command cleanly: half-written copies are removed and the index is never left half-saved.
+Warnings and errors always show. Add `-v` (before or after the command) to also see every file action, e.g. `octoback update --all -v`. Ctrl+C stops any command cleanly: half-written copies are removed and the index is never left half-saved. Commands that change the index or the Vault wait for each other, so two of them never run at once.
 
 ## How it works
 
@@ -103,6 +103,8 @@ The **Vault** mirrors the full path of everything you back up:
 ```
 /home/you/Documents/report.pdf  ->  ~/Vault/home/you/Documents/report.pdf
 ```
+
+When a file becomes a folder (or the other way around), its old backup can't stay at the same place. `backup` moves it to `~/Vault/.octoback-replaced/<date>/...` instead of deleting it, and `restore` never brings it back.
 
 The **index** stores a BLAKE3 hash, type and size for each tracked path, plus a quick signature built from sizes and modification times. When the signature hasn't changed, `update` and `backup` skip the path without reading it, which makes repeat runs on large folders nearly instant.
 
@@ -115,7 +117,7 @@ History (last 3 of 3)
   2026-10-16 21:07:23  ✓ Deleted    ~/thesis
 ```
 
-`vault clean` uses this history carefully. It only removes backups of paths you **untracked** yourself, and old copies of **moved** files once the new location is backed up. Backups of **deleted** files are always kept, since the Vault may hold the only copy.
+`vault clean` uses this history carefully. It only removes backups of paths you **untracked** yourself, and old copies of **moved** files once the new location is backed up. Backups of **deleted** files are kept, since the Vault may hold the only copy, unless you pass `--remove-deleted` (a file that is back on disk keeps its backup either way).
 
 ## Configuration
 

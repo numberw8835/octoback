@@ -153,7 +153,8 @@ class Engine:
             if not dir_hash:
                 logger.error("Could not hash %s", short_path(path))
                 return False
-            if path in self.index and self.index[path].get("hash") == dir_hash:
+            # Compare the type too: an empty folder and an empty file have the same hash
+            if self.index.get(path, {}).get("type") == "dir" and self.index[path].get("hash") == dir_hash:
                 self.index[path]["signature"] = signature
                 logger.debug("Unchanged: %s", path)
                 return True
@@ -170,7 +171,7 @@ class Engine:
             if not file_hash:
                 logger.error("Could not hash %s", short_path(path))
                 return False
-            if path in self.index and self.index[path].get("hash") == file_hash:
+            if self.index.get(path, {}).get("type") == "file" and self.index[path].get("hash") == file_hash:
                 self.index[path]["signature"] = signature
                 logger.debug("Unchanged: %s", path)
                 return True

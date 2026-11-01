@@ -3,10 +3,52 @@ import os
 import time
 from typing import List
 from modules.engine import Engine
+from .pick import pick
+from .restore import is_different
 from .update import update
-from ..utils import DualProgressBar, copy_to, count_part, format_size, format_summary, short_path
+from ..utils import DualProgressBar, ancestors, copy_to, count_part, format_size, format_summary, is_gone, paint, short_path
 
 logger = logging.getLogger("octoback.backup")
+
+
+def backup_items(engine: Engine) -> dict:
+    """Lists what backup can copy: tracked path -> (kind, size, status compared with the Vault)."""
+    items = {}
+    for path, meta in engine.index.items():
+        vault_copy = os.path.join(engine.vault_path, path.lstrip(os.sep))
+        if meta.get("type") == "file":
+            kind = "file"
+        else:
+            kind = "whole" if engine.is_whole(path) else "empty"
+
+        if not os.path.exists(path):
+            status = "missing" if is_gone(path) else "can't read"
+        elif not os.path.lexists(vault_copy):
+            status = "new"
+        elif kind != "file":
+            status = "in Vault"
+        elif os.path.isfile(vault_copy) and not is_different(path, vault_copy):
+            status = "same"
+        else:
+            status = "changed"
+        items[path] = (kind, meta.get("size", 0), status)
+    return items
+
+
+def pick_backup(engine: Engine) -> List[str] | None:
+    """Lets the user pick tracked paths to back up from a list. None when nothing was picked."""
+    print(paint("Reading the index ...", "dim"))
+    items = backup_items(engine)
+    if not items:
+        print("Nothing is tracked yet. Start with: octoback add <paths>")
+        return None
+    picked = pick(items, "Back up", "b", "back up")
+    if not picked:
+        print("Nothing backed up.")
+        return None
+    # A picked folder means the tracked paths inside it, not the untracked files next to them
+    picked = set(picked)
+    return sorted(p for p in items if p in picked or any(folder in picked for folder in ancestors(p)))
 
 
 def backup(engine: Engine, input: List[str], all_flag: bool = False, update_first: bool = False) -> bool:
@@ -53,7 +95,11 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False, update_firs
     try:
         for path in targets:
             if not os.path.exists(path):
-                logger.warning("Not found, skipped: %s", short_path(path))
+                if is_gone(path):
+                    logger.warning("Not found, skipped: %s", short_path(path))
+                else:
+                    logger.error("Could not read %s", short_path(path))  # e.g. inside a folder without permission
+                    failed.append(path)
                 continue
 
             # Strip leading '/' so os.path.join preserves engine.vault_path:
@@ -61,7 +107,7 @@ def backup(engine: Engine, input: List[str], all_flag: bool = False, update_firs
             rel_path = path.lstrip(os.sep)
             dest_vault_path = os.path.join(engine.vault_path, rel_path)
 
-            if not copy_to(source=path, destination=dest_vault_path, tracker=tracker):
+            if not copy_to(source=path, destination=dest_vault_path, tracker=tracker, vault_root=engine.vault_path):
                 failed.append(path)
     except KeyboardInterrupt:
         tracker.finish()  # Clear the bar, then let main() report the kill
